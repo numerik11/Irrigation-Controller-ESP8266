@@ -1,10 +1,6 @@
 //ESP8266 WIFI Irrigation Controller(Wemos D1 R2)//Beau Kaczmarek
-//To acsess WEB UI In the address bar of the web browser, type in Local IP address. 
-//You can find the IP address of the device in the device's network settings.
-//If you are not sure how to find the IP address, search for "ESP-D8FCA9" between 192.168.0.0 and 192.168.0.255 
-//You can find the IP address using https://sourceforge.net/projects/ipscan/ --- Mine is 192.168.0.103
+//To acsess WEB UI In the address bar of the web browser, type in Local IP address displayed on LCD.
 //Get a free weather API @ https://openweathermap.org/
-
 
 #include <ESP8266WiFi.h>
 #include <WiFiClient.h>
