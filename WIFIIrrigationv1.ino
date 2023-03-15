@@ -15,12 +15,12 @@
 #include <WiFiClientSecure.h>
 
 // WiFi credentials
-const char* ssid = "WIFIUSERNAME";               //Your network SSID/WIFI NAME here
-const char* password = "WIFIPASSWORD";               //Your network Password here
+const char* ssid = "WIFIUSERNAME";                  //Your network SSID/WIFI NAME here
+const char* password = "WIFIPASSWORD";              //Your network Password here
 
 // Weather API variables                                                                                                                      
-const char* city = "Happy Valley, AU";           //Replace with your city name
-const char* apiKey = "OPENWEATHERAPIKEY";        //Openwaethermap API Get one for free at https://openweathermap.org/
+const char* city = "Happy Valley, AU";              //Replace with your city name
+const char* apiKey = "OPENWEATHERAPIKEY";           //Openwaethermap API Get one for free at https://openweathermap.org/
 // LCD screen setup
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);
