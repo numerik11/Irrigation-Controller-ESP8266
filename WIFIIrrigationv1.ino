@@ -144,20 +144,20 @@ void checkWateringSchedule(unsigned long elapsedTime) {
   int currentMin = timeClient.getMinutes();// Get the current minute (0-59)
 
   // Check if it's time to water for the first start time
-  if (days[currentDay] && currentHour == startHour1 && currentMin == startMin1 && !valveOn) {
-    // If it's the right day and time, and the valve is not already on, turn on the valve for the specified duration
-    lcd.clear();
-    turnOnValve(); // Turn on the valve by setting the valve pin to HIGH
-  }
-
-  // Check if it's time to water for the second start time
-  if (enableSchedule2 && days[currentDay] && currentHour == startHour2 && currentMin == startMin2 && !valveOn) {
-    // If the second schedule is enabled and it's the right day and time, and the valve is not already on, turn on the valve for the specified duration
-    lcd.clear();
-    bool raining = checkRain();
-    turnOnValve(); // Turn on the valve by setting the valve pin to HIGH
-  }
-
+if (days[currentDay] && currentHour == startHour1 && currentMin == startMin1 && !valveOn) {
+  // If it's the right day and time for the first watering schedule, and the valve is not already on, turn on the valve for the specified duration
+  bool raining = checkRain();
+  delay(1000);
+  lcd.clear();
+  turnOnValve(); // Turn on the valve by setting the valve pin to HIGH
+} else if (enableSchedule2 && days[currentDay] && currentHour == startHour2 && currentMin == startMin2 && !valveOn) {
+  // If the second schedule is enabled, and it's the right day and time for the second watering schedule, and the valve is not already on, turn on the valve for the specified duration
+  bool raining = checkRain();
+  delay(1000);
+  lcd.clear();
+  turnOnValve();  
+  // Turn on the valve by setting the valve pin to HIGH
+}
   if (valveOn && (elapsedTime / 60 >= duration)) {
     // If the valve has been running for longer than the specified duration, turn it off
     turnOffValve(); // Turn off the valve by setting the valve pin to LOW
