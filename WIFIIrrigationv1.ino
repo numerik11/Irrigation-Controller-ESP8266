@@ -53,6 +53,12 @@ bool prevDays[7] = {false, false, false, false, false, false, false}; //days to 
 boolean enableSchedule2 = false; //Start 2 checkbox
 
 void setup() {
+ 
+  // Set up NTP client
+  timeClient.begin();
+  timeClient.setTimeOffset((9.5 + 1) * 3600); //SET TIMEZONE HERE--Currently set at: UTC+9:30 during standard time and UTC+10:30 during daylight saving time.
+  timeClient.update();
+    
   // Start serial communication
   Serial.begin(9600);
   //check/initilize for webui 
@@ -60,7 +66,7 @@ void setup() {
  
    // Initialize OTA
   ArduinoOTA.begin(); 
-  
+   
   // Set the hostname of the ESP8266 for OTA
   ArduinoOTA.setHostname("ESPIrrigation"); 
   
@@ -92,11 +98,6 @@ void setup() {
   server.on("/submit", handleSubmit);
   server.begin();
 
-  // Set up NTP client
-  timeClient.begin();
-  timeClient.setTimeOffset((9.5 + 1) * 3600);
-  timeClient.update();
- 
   // turn off valve
   pinMode(valvePin, OUTPUT);
   digitalWrite(valvePin, LOW);
