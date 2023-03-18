@@ -270,7 +270,7 @@ void handleSubmit() {
 }
 
 bool checkRain() {
-                                                                                                                          // Make a GET request to the OpenWeatherMap API to get the current weather data
+  // Make a GET request to the OpenWeatherMap API to get the current weather data
   String url = "http://api.openweathermap.org/data/2.5/weather?q=" + String(city) + "&appid=" + String(apiKey);
   WiFiClient client;
   if (client.connect("api.openweathermap.org", 80)) {
@@ -300,7 +300,7 @@ bool checkRain() {
     deserializeJson(doc, response);
     condition = doc["weather"][0]["main"].as<String>();
   }
-                                                                                                                          // Print the weather condition to the LCD screen
+    // Print the weather condition to the LCD screen
   lcd.clear();
   lcd.setCursor(4, 0);
   lcd.print("Weather ");
@@ -308,7 +308,7 @@ bool checkRain() {
   lcd.print(condition);
   delay(4000);
   lcd.clear();
-                                                                                                                          // Check if it's raining and return a boolean value indicating whether it's raining or not
+    // Check if it's raining and return a boolean value indicating whether it's raining or not
   if (condition == "Rain" || condition == "Drizzle" || condition == "Thunderstorm") {
     turnOffValve();
     lcd.clear();
