@@ -61,7 +61,8 @@ void setup() {
     
   // Start serial communication
   Serial.begin(9600);
-  //check/initilize for webui 
+ 
+ //check/initilize for webui 
   bool raining = checkRain();  
  
    // Initialize OTA
