@@ -4,16 +4,15 @@
 
 #include <EEPROM.h>
 #include <ESP8266WiFi.h>
-#include <WiFiClient.h>
 #include <ESP8266WebServer.h>
+#include <WiFiClient.h>
+#include <WiFiClientSecure.h>
+#include <WiFiUdp.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 #include <NTPClient.h>
-#include <WiFiUdp.h>
 #include <ArduinoOTA.h>
 #include <ArduinoJson.h>
-#include <WiFiClient.h>
-#include <WiFiClientSecure.h>
 
 // WiFi credentials
 const char* ssid = "WIFIUSERNAME";                  //Your network SSID/WIFI NAME here
@@ -23,8 +22,11 @@ const char* password = "WIFIPASSWORD";              //Your network Password here
 const char* city = "Happy Valley, AU";              //Replace with your city name
 const char* apiKey = "OPENWEATHERAPIKEY";           //Openwaethermap API Number, Get one for free at https://openweathermap.org/
 
-//LCD
+// LCD Address
 LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+// Address in EEPROM to start saving data
+int addr = 0;
 
 // Web server setup
 ESP8266WebServer server(80);
@@ -63,6 +65,12 @@ void setup() {
   // Start serial communication
   Serial.begin(9600);
   
+    // Initialize EEPROM
+  EEPROM.begin(512);
+  
+  // Load watering schedule from EEPROM
+  loadSchedule();
+
   //check/initilize for webui 
   bool raining = checkRain();  
  
@@ -141,11 +149,12 @@ void updateLCD() {
 }
 
 void checkWateringSchedule(unsigned long elapsedTime) {
+  loadSchedule();
   timeClient.update(); // Update the NTP client with the current time
   int currentDay = timeClient.getDay(); // Get the current day of the week (0 = Sunday, 1 = Monday, etc.)
   int currentHour = timeClient.getHours(); // Get the current hour (0-23)
   int currentMin = timeClient.getMinutes();// Get the current minute (0-59)
-
+  
   // Check if it's time to water for the first start time
 if (days[currentDay] && currentHour == startHour1 && currentMin == startMin1 && !valveOn) {
   // If it's the right day and time for the first watering schedule, and the valve is not already on, turn on the valve for the specified duration
@@ -248,8 +257,7 @@ void handleSubmit() {
     days[i] = server.hasArg("day_" + String(i)) ? true : false; // update state based on checkbox
   }
 
-  // Save settings to EEPROM
-  saveSettingsToEEPROM();
+  saveSchedule(); // Save values to EEPROM
 
   // Display updated watering schedule settings on LCD screen
   lcd.clear();
@@ -273,17 +281,60 @@ void handleSubmit() {
   server.send(302, "text/plain", "");
 }
 
-void saveSettingsToEEPROM() {
-  EEPROM.write(0, duration); // save duration in the first EEPROM address
-  EEPROM.write(1, enableSchedule2); // save enableSchedule2 in the second EEPROM address
+void saveSchedule() {
+  
+   int address = 0;
+
+  // Save the days array
   for (int i = 0; i < 7; i++) {
-    EEPROM.write(i + 2, days[i]); // save each day's state starting from the third EEPROM address
+    EEPROM.write(address, days[i]);
+    address++;
   }
-  EEPROM.write(9, startHour1);
-  EEPROM.write(10, startMin1);
-  EEPROM.write(11, startHour2);
-  EEPROM.write(12, startMin2);
-  EEPROM.commit(); // commit the changes to EEPROM
+
+  // Save the start times and duration
+  EEPROM.write(address, startHour1);
+  address++;
+  EEPROM.write(address, startMin1);
+  address++;
+  EEPROM.write(address, startHour2);
+  address++;
+  EEPROM.write(address, startMin2);
+  address++;
+  EEPROM.write(address, duration);
+  address++;
+
+  // Save the enableSchedule2 flag
+  EEPROM.write(address, enableSchedule2);
+  address++;
+
+  // Commit the changes to EEPROM
+  EEPROM.commit();
+}
+
+void loadSchedule() {
+  int address = 0;
+
+  // Load the days array
+  for (int i = 0; i < 7; i++) {
+    days[i] = EEPROM.read(address);
+    address++;
+  }
+
+  // Load the start times and duration
+  startHour1 = EEPROM.read(address);
+  address++;
+  startMin1 = EEPROM.read(address);
+  address++;
+  startHour2 = EEPROM.read(address);
+  address++;
+  startMin2 = EEPROM.read(address);
+  address++;
+  duration = EEPROM.read(address);
+  address++;
+
+  // Load the enableSchedule2 flag
+  enableSchedule2 = EEPROM.read(address);
+  address++;
 }
 
 bool checkRain() {
