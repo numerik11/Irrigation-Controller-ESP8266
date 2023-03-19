@@ -235,7 +235,11 @@ html += "<button name='valve' value='off' " + String(!valveOn ? "disabled" : "")
 html += "</div>";
 html += "<br><br><input type='submit' value='Submit'><br>";
 html += "</form></body></html>";
-html += "<img src='https://i.gifer.com/7cIX.gif'>";
+if (valveOn) {
+  html += "<img src='https://cdn.dribbble.com/users/491554/screenshots/1437581/media/0f6e1900ba310477df34651045822f1d.gif'>";
+} else {
+  html += "<img src='https://i.gifer.com/7cIX.gif'>";
+}
 server.send(200, "text/html", html);
 server.sendHeader("Location", "/", true);
 server.send(302, "text/plain", "");
