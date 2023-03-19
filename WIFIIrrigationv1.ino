@@ -2,6 +2,7 @@
 //To acsess WEB UI In the address bar of the web browser, type in Local IP address displayed on LCD.
 //Get a free weather API @ https://openweathermap.org/
 
+#include <EEPROM.h>
 #include <ESP8266WiFi.h>
 #include <WiFiClient.h>
 #include <ESP8266WebServer.h>
@@ -61,8 +62,8 @@ void setup() {
     
   // Start serial communication
   Serial.begin(9600);
- 
- //check/initilize for webui 
+  
+  //check/initilize for webui 
   bool raining = checkRain();  
  
    // Initialize OTA
@@ -241,34 +242,48 @@ void handleSubmit() {
   duration = server.arg("duration").toInt();
   enableSchedule2 = server.hasArg("enableSchedule2");
 
-
   for (int i = 0; i < 7; i++) {
     // save selected days
     prevDays[i] = days[i]; // save previous state
     days[i] = server.hasArg("day_" + String(i)) ? true : false; // update state based on checkbox
+  }
 
-    // Display updated watering schedule settings on LCD screen
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("S1-" + String(startHour1) + ":" + String(startMin1) + " S2-" + String(startHour2) + ":" + String(startMin2));
-    lcd.setCursor(0, 1);
-    lcd.print("Duration: " + String(duration) + " Mins");
-    delay(2500);
-    lcd.clear();
+  // Save settings to EEPROM
+  saveSettingsToEEPROM();
+
+  // Display updated watering schedule settings on LCD screen
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("S1-" + String(startHour1) + ":" + String(startMin1) + " S2-" + String(startHour2) + ":" + String(startMin2));
+  lcd.setCursor(0, 1);
+  lcd.print("Duration: " + String(duration) + " Mins");
+  delay(2500);
+  lcd.clear();
 
   // Control valve based on form input
-    if (server.arg("valve") == "on") {
-      turnOnValve();
-    } else if (server.arg("valve") == "off") {
-      digitalWrite(valvePin, LOW);
-      turnOffValve();
-    }
-  
+  if (server.arg("valve") == "on") {
+    turnOnValve();
+  } else if (server.arg("valve") == "off") {
+    digitalWrite(valvePin, LOW);
+    turnOffValve();
+  }
 
   // Send response to client
   server.sendHeader("Location", "/", true);
   server.send(302, "text/plain", "");
+}
+
+void saveSettingsToEEPROM() {
+  EEPROM.write(0, duration); // save duration in the first EEPROM address
+  EEPROM.write(1, enableSchedule2); // save enableSchedule2 in the second EEPROM address
+  for (int i = 0; i < 7; i++) {
+    EEPROM.write(i + 2, days[i]); // save each day's state starting from the third EEPROM address
   }
+  EEPROM.write(9, startHour1);
+  EEPROM.write(10, startMin1);
+  EEPROM.write(11, startHour2);
+  EEPROM.write(12, startMin2);
+  EEPROM.commit(); // commit the changes to EEPROM
 }
 
 bool checkRain() {
