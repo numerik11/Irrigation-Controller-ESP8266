@@ -217,6 +217,7 @@ html += "</head><body>";
 html += "<h1>Watering Schedule</h1>";
 html += "<p>Current time: <span id='time'>" + timeClient.getFormattedTime() + "</span></p>";
 html += "<p>Current Weather: " + condition + " -- Temp: " + String(temperature) + "&deg;C</p>";
+html += "<p>Rain Status: " + String(raining ? "Raining (Solenoid Disabled)" : "Not Raining (Solenoid Active)") + "</p>";
 html += "Watering Days:<br>";
 html += "<input type='checkbox' name='day_0' value='0'" + String(days[0] ? " checked" : "") + ">Sunday ";
 html += "<input type='checkbox' name='day_1' value='1'" + String(days[1] ? " checked" : "") + ">Monday ";
