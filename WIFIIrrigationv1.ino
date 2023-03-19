@@ -198,19 +198,25 @@ void turnOffValve() {
 void handleRoot() {
   // Get the current time from the NTP server
   timeClient.update();
-  String currentTime = timeClient.getFormattedTime();
   String temperature = getTemperature();
-
-  // Get the current weather condition from the OpenWeatherMap API
   String condition = getWeatherCondition();
 
-  // Display watering schedule settings on web page
-String html = "<!DOCTYPE html><html><head><title>WiFi Irrigation Timer</title></head><body>";
+  String html = "<!DOCTYPE html><html><head><title>WiFi Irrigation Timer</title>";
+html += "<script>";
+html += "function updateTime() {";
+html += "  var now = new Date();";
+html += "  var hours = now.getHours().toString().padStart(2, '0');";
+html += "  var minutes = now.getMinutes().toString().padStart(2, '0');";
+html += "  var seconds = now.getSeconds().toString().padStart(2, '0');";
+html += "  var timeString = hours + ':' + minutes + ':' + seconds;";
+html += "  document.getElementById('time').textContent = timeString;";
+html += "}";
+html += "setInterval(updateTime, 1000);";
+html += "</script>";
+html += "</head><body>";
 html += "<h1>Watering Schedule</h1>";
-html += "<form action='/submit' method='POST'>";
-html += "<p>Rain Status: " + String(raining ? "Raining (Solenoid Disabled)" : "Not Raining (Solenoid Active)") + "</p>";
-html += "<p>Current Weather: " + condition + " " + "  -- Temp: " + String(temperature) + "&deg;C</p>";
-html += "<p>Current time: " + currentTime + "</p>";
+html += "<p>Current time: <span id='time'>" + timeClient.getFormattedTime() + "</span></p>";
+html += "<p>Current Weather: " + condition + " -- Temp: " + String(temperature) + "&deg;C</p>";
 html += "Watering Days:<br>";
 html += "<input type='checkbox' name='day_0' value='0'" + String(days[0] ? " checked" : "") + ">Sunday ";
 html += "<input type='checkbox' name='day_1' value='1'" + String(days[1] ? " checked" : "") + ">Monday ";
