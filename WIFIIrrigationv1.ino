@@ -44,11 +44,11 @@ bool valveOn = false; //for valve on/off check
 bool raining = false; //for raining/not raining check if true activate solenoid
 
 // Watering schedule variables
-int startHour1 = 19; // default start Hour 1: is 7 PM
-int startMin1 = 30; // default start Minutes 1: is 30 PM
-int startHour2 = 7; // default start Hour 2: is 7 AM
-int startMin2 = 30;// default start Minutes 2: is 30 AM
-int duration = 10;  // default duration is 10 minutes.
+int startHour1 = 0; 
+int startMin1 = 0; 
+int startHour2 = 0; 
+int startMin2 = 0;
+int duration = 0;  
 
 // default watering days
 bool days[7] = {false, true, false, true, false, true, false}; //default days
@@ -197,6 +197,8 @@ void turnOffValve() {
 
 void handleRoot() {
   // Get the current time from the NTP server
+  delay(1500);
+  bool checkRain();
   timeClient.update();
   String temperature = getTemperature();
   String condition = getWeatherCondition();
@@ -216,16 +218,16 @@ html += "</script>";
 html += "</head><body>";
 html += "<h1>Watering Schedule</h1>";
 html += "<form action='/submit' method='POST'>";
-html += "<p>Current time: <span id='time'>" + timeClient.getFormattedTime() + "</span></p>";
+html += "<p>Current Time: <span id='time'>" + timeClient.getFormattedTime() + "</span></p>";
 html += "<p>Current Weather: " + condition + " -- Temp: " + String(temperature) + "&deg;C</p>";
 html += "<p>Rain Status: " + String(raining ? "Raining (Solenoid Disabled)" : "Not Raining (Solenoid Active)") + "</p>";
 html += "Watering Days:<br>";
-html += "<input type='checkbox' name='day_0' value='0'" + String(days[0] ? " checked" : "") + ">Sunday ";
-html += "<input type='checkbox' name='day_1' value='1'" + String(days[1] ? " checked" : "") + ">Monday ";
-html += "<input type='checkbox' name='day_2' value='2'" + String(days[2] ? " checked" : "") + ">Tuesday ";
-html += "<input type='checkbox' name='day_3' value='3'" + String(days[3] ? " checked" : "") + ">Wednesday ";
-html += "<input type='checkbox' name='day_4' value='4'" + String(days[4] ? " checked" : "") + ">Thursday ";
-html += "<input type='checkbox' name='day_5' value='5'" + String(days[5] ? " checked" : "") + ">Friday ";
+html += "<input type='checkbox' name='day_0' value='0'" + String(days[0] ? " checked" : "") + ">Sunday<br>";
+html += "<input type='checkbox' name='day_1' value='1'" + String(days[1] ? " checked" : "") + ">Monday<br>";
+html += "<input type='checkbox' name='day_2' value='2'" + String(days[2] ? " checked" : "") + ">Tuesday<br>";
+html += "<input type='checkbox' name='day_3' value='3'" + String(days[3] ? " checked" : "") + ">Wednesday<br>";
+html += "<input type='checkbox' name='day_4' value='4'" + String(days[4] ? " checked" : "") + ">Thursday<br>";
+html += "<input type='checkbox' name='day_5' value='5'" + String(days[5] ? " checked" : "") + ">Friday<br>";
 html += "<input type='checkbox' name='day_6' value='6'" + String(days[6] ? " checked" : "") + ">Saturday<br><br>";
 html += "Start Time 1:  <input type='number' name='start_hours_1' value='" + String(startHour1) + "' min='0' max='23'>";
 html += " <input type='number' name='start_mins_1' value='" + String(startMin1) + "' min='0' max='59'><br><br>";
@@ -251,7 +253,6 @@ if (valveOn) {
 server.send(200, "text/html", html);
 server.sendHeader("Location", "/", true);
 server.send(302, "text/plain", "");
-delay(1000);
 }
 
 void handleSubmit() {
@@ -277,7 +278,7 @@ void handleSubmit() {
   lcd.print("S1-" + String(startHour1) + ":" + String(startMin1) + " S2-" + String(startHour2) + ":" + String(startMin2));
   lcd.setCursor(0, 1);
   lcd.print("Duration: " + String(duration) + " Mins");
-  delay(2500);
+  delay(1500);
   lcd.clear();
 
   // Control valve based on form input
@@ -386,7 +387,7 @@ bool checkRain() {
   lcd.print("Weather ");
   lcd.setCursor(5, 1);
   lcd.print(condition);
-  delay(4000);
+  delay(1000);
   lcd.clear();
     // Check if it's raining and return a boolean value indicating whether it's raining or not
   if (condition == "Rain" || condition == "Drizzle" || condition == "Thunderstorm") {
@@ -436,6 +437,7 @@ String getWeatherCondition() {
     deserializeJson(doc, response);
     condition = doc["weather"][0]["main"].as<String>();
   }
+  delay(500);
   return condition; // return the weather condition
 }
 
@@ -469,6 +471,7 @@ String getTemperature() {
     deserializeJson(doc, response);
     float temperature = doc["main"]["temp"].as<float>();
     temperature -= 273.15;
+    delay(500);
     return String(temperature);
   } else {
     Serial.println("Could not connect to weather API");
@@ -477,3 +480,4 @@ String getTemperature() {
 }
 
 //End
+
