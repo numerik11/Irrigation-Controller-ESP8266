@@ -215,6 +215,7 @@ html += "setInterval(updateTime, 1000);";
 html += "</script>";
 html += "</head><body>";
 html += "<h1>Watering Schedule</h1>";
+html += "<form action='/submit' method='POST'>";
 html += "<p>Current time: <span id='time'>" + timeClient.getFormattedTime() + "</span></p>";
 html += "<p>Current Weather: " + condition + " -- Temp: " + String(temperature) + "&deg;C</p>";
 html += "<p>Rain Status: " + String(raining ? "Raining (Solenoid Disabled)" : "Not Raining (Solenoid Active)") + "</p>";
