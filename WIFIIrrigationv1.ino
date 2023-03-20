@@ -198,7 +198,7 @@ void turnOffValve() {
 void handleRoot() {
   // Get the current time from the NTP server
   delay(1500);
-  bool checkRain();
+  bool raining = (getWeatherCondition() == "Rain");
   timeClient.update();
   String temperature = getTemperature();
   String condition = getWeatherCondition();
