@@ -1,6 +1,6 @@
 //ESP8266 WIFI Irrigation Controller(Wemos D1 R2)//Beau Kaczmarek
 //To acsess WEB UI In the address bar of the web browser, type in Local IP address displayed on LCD.
-//Get a free weather API @ https://openweathermap.org/
+
 
 #include <EEPROM.h>
 #include <ESP8266WiFi.h>
@@ -20,7 +20,7 @@ const char* password = "WIFIPASSWORD";              //Your network Password here
 
 // Weather API variables                                                                                                                      
 const char* city = "Happy Valley, AU";              //Replace with your city name
-const char* apiKey = "OPENWEATHERAPIKEY";           //Openwaethermap API Number, Get one for free at https://openweathermap.org/
+const char* apiKey = "OPENWEATHERAPIKEY";           //Get a free weather API @ https://openweathermap.org/
 
 // LCD Address
 LiquidCrystal_I2C lcd(0x27, 16, 2);
