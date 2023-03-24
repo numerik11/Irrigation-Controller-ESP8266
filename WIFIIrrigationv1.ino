@@ -197,7 +197,7 @@ void turnOffValve() {
 
 void handleRoot() {
   // Get the current time from the NTP server
-  delay(1500);
+  delay(500);
   bool raining = (getWeatherCondition() == "Rain");
   timeClient.update();
   String temperature = getTemperature();
@@ -246,9 +246,9 @@ html += "</div>";
 html += "<br><br><input type='submit' value='Submit'><br>";
 html += "</form></body></html>";
 if (valveOn) {
-  html += "<img src='https://cdn.dribbble.com/users/491554/screenshots/1437581/media/0f6e1900ba310477df34651045822f1d.gif'>";
+  html += "<img src='https://i.gifer.com/origin/ed/ed9535e58a5f806d4c96f7b35fd2f193_w200.webp'>";    //GIF When on 
 } else {
-  html += "<img src='https://i.gifer.com/7cIX.gif'>";
+  html += "<img src='https://i.gifer.com/origin/be/befaac44f3f17c099afd6b356bcbb19a_w200.webp'>";    //GIF When off
 }
 server.send(200, "text/html", html);
 server.sendHeader("Location", "/", true);
@@ -391,16 +391,18 @@ bool checkRain() {
   lcd.clear();
     // Check if it's raining and return a boolean value indicating whether it's raining or not
   if (condition == "Rain" || condition == "Drizzle" || condition == "Thunderstorm") {
-    turnOffValve();
     lcd.clear();
     lcd.setCursor(4, 1);
     lcd.print("Raining");
+    delay(1000);
+    lcd.clear();
+    turnOffValve();
     return true;
   } else {
     lcd.clear();
     lcd.setCursor(2, 1);
     lcd.print("Not raining");
-    delay(1000);
+    delay(500);
     lcd.clear();
     return false;
   }
