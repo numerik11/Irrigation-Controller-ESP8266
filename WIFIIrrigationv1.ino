@@ -246,9 +246,9 @@ html += "</div>";
 html += "<br><br><input type='submit' value='Submit'><br>";
 html += "</form></body></html>";
 if (valveOn) {
-  html += "<img src='https://i.gifer.com/origin/ed/ed9535e58a5f806d4c96f7b35fd2f193_w200.webp'>";    //GIF When on 
+  html += "<img src='https://i.gifer.com/origin/8a/8af4debd70ea382bab051de8ef97fa4b_w200.webp'>";    //GIF When on 
 } else {
-  html += "<img src='https://i.gifer.com/origin/be/befaac44f3f17c099afd6b356bcbb19a_w200.webp'>";    //GIF When off
+  html += "<img src='https://i.gifer.com/origin/f4/f47235010209779597489cbf00211674_w200.webp'>";    //GIF When off
 }
 server.send(200, "text/html", html);
 server.sendHeader("Location", "/", true);
