@@ -158,23 +158,25 @@ void checkWateringSchedule(unsigned long elapsedTime) {
   // Check if it's time to water for the first start time
 if (days[currentDay] && currentHour == startHour1 && currentMin == startMin1 && !valveOn) {
   // If it's the right day and time for the first watering schedule, and the valve is not already on, turn on the valve for the specified duration
-  bool raining = checkRain();
-  delay(1000);
-  lcd.clear();
-  turnOnValve(); // Turn on the valve by setting the valve pin to HIGH
+    turnOnValve(); // Turn on the valve by setting the valve pin to HIGH
 } 
 
 if (enableSchedule2 && days[currentDay] && currentHour == startHour2 && currentMin == startMin2 && !valveOn) {
   // If the second schedule is enabled, and it's the right day and time for the second watering schedule, and the valve is not already on, turn on the valve for the specified duration
-  bool raining = checkRain();
-  delay(1000);
-  lcd.clear();
-  turnOnValve();  
+    turnOnValve();  
   // Turn on the valve by setting the valve pin to HIGH
 }
-  if (valveOn && (elapsedTime / 60 >= duration)) {
+
+if (valveOn && (elapsedTime / 60 >= duration)) {
     // If the valve has been running for longer than the specified duration, turn it off
     turnOffValve(); // Turn off the valve by setting the valve pin to LOW
+  } else if (checkRain() == true) { 
+    turnOffValve();
+    lcd.clear();
+    lcd.setCursor(4, 1);
+    lcd.print("Raining");
+    delay(60000);
+    lcd.clear();
   }
 }
   
@@ -381,29 +383,11 @@ bool checkRain() {
     deserializeJson(doc, response);
     condition = doc["weather"][0]["main"].as<String>();
   }
-    // Print the weather condition to the LCD screen
-  lcd.clear();
-  lcd.setCursor(4, 0);
-  lcd.print("Weather ");
-  lcd.setCursor(5, 1);
-  lcd.print(condition);
-  delay(1000);
-  lcd.clear();
     // Check if it's raining and return a boolean value indicating whether it's raining or not
   if (condition == "Rain" || condition == "Drizzle" || condition == "Thunderstorm") {
-    lcd.clear();
-    lcd.setCursor(4, 1);
-    lcd.print("Raining");
-    delay(1000);
-    lcd.clear();
     turnOffValve();
     return true;
   } else {
-    lcd.clear();
-    lcd.setCursor(2, 1);
-    lcd.print("Not raining");
-    delay(500);
-    lcd.clear();
     return false;
   }
 }  
