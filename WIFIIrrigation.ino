@@ -19,8 +19,8 @@ const int mainsSolenoidPin = D7; // MainsSolenoidPin solenoid
 const int tankSolenoidPin = D8; // Water tank solenoid
 const int tankLevelPin = A0; // Analog pin for tank level sensor
 
-const char* ssid = "DESKTOPHOTSPOT";
-const char* password = "speeduino11";
+const char* ssid = "yourwifi";
+const char* password = "passwerd";
 
 String newSsid;
 String newPassword;
