@@ -64,15 +64,15 @@ bool prevDays[4][7] = {{false, false, false, false, false, false, false},
 
 void setup() {
   for (int i = 0; i < 4; i++) {
-    pinMode(valvePins[i], OUTPUT);
-    digitalWrite(valvePins[i], LOW);
+   pinMode(valvePins[i], OUTPUT);
+   digitalWrite(valvePins[i], LOW);
   }
 
-    for (int i = 0; i < numZones; i++) {
-    startHour[i] = 0;
-    startMin[i] = 0;
-    duration[i] = 10; // Default duration in minutes
-    enableStartTime[i] = false; // Default to disabled
+  for (int i = 0; i < numZones; i++) {
+   startHour[i] = 0;
+   startMin[i] = 0;
+   duration[i] = 10; // Default duration in minutes
+   enableStartTime[i] = false; // Default to disabled
   }
   
   pinMode(ledPin, OUTPUT);
@@ -484,20 +484,20 @@ void handleRoot() {
 
   // Display the days of the week, start times, duration, and manual control buttons for each zone
   for (int zone = 0; zone < numZones; zone++) {
-    html += "<div class='zone-container'>";
-    html += "<p><strong>Zone " + String(zone + 1) + ":</strong></p>";
+  html += "<div class='zone-container'>";
+  html += "<p><strong>Zone " + String(zone + 1) + ":</strong></p>";
 
-    // Days checkboxes
-    html += "<div class='days-container'>";
-    for (int i = 0; i < 7; i++) {
-      String dayLabel = getDayName(i);
-      String checked = days[zone][i] ? "checked" : "";
-      html += "<div class='checkbox-container'>";
-      html += "<input type='checkbox' name='day" + String(zone) + "_" + String(i) + "' id='day" + String(zone) + "_" + String(i) + "' " + checked + ">";
-      html += "<label for='day" + String(zone) + "_" + String(i) + "'>" + dayLabel + "</label>";
-      html += "</div>";
-    }
-    html += "</div>";
+  // Days checkboxes
+  html += "<div class='days-container'>";
+  for (int i = 0; i < 7; i++) {
+  String dayLabel = getDayName(i);
+  String checked = days[zone][i] ? "checked" : "";
+  html += "<div class='checkbox-container'>";
+  html += "<input type='checkbox' name='day" + String(zone) + "_" + String(i) + "' id='day" + String(zone) + "_" + String(i) + "' " + checked + ">";
+  html += "<label for='day" + String(zone) + "_" + String(i) + "'>" + dayLabel + "</label>";
+  html += "</div>";
+  }
+  html += "</div>";
 
 // Start times and duration
     html += "<div class='time-duration-container'>";
