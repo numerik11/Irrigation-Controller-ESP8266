@@ -1,469 +1,687 @@
-//ESP8266 WIFI Irrigation Controller(Wemos D1 R2)//Beau Kaczmarek
-//To acsess WEB UI In the address bar of the web browser, type in Local IP address displayed on LCD.
-
-
+#include <ArduinoJson.h>
+#include <ArduinoOTA.h>
+#include <DNSServer.h>
 #include <EEPROM.h>
-#include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
-#include <WiFiClient.h>
-#include <WiFiClientSecure.h>
-#include <WiFiUdp.h>
-#include <Wire.h>
+#include <ESP8266WiFi.h>
+#include <ESP8266HTTPClient.h>
 #include <LiquidCrystal_I2C.h>
 #include <NTPClient.h>
-#include <ArduinoOTA.h>
-#include <ArduinoJson.h>
+#include <WiFiClient.h>
+#include <WiFiClientSecure.h>
+#include <WiFiManager.h>
+#include <WiFiUdp.h>
+#include <Wire.h>
 
-// WiFi credentials
-const char* ssid = "WIFIUSERNAME";                  //Your network SSID/WIFI NAME here
-const char* password = "WIFIPASSWORD";              //Your network Password here
+const int valvePins[] = {D0, D3, D5, D6}; // Pins for 4 solenoids
+const int ledPin = D4;
+const int mainsSolenoidPin = D7; // MainsSolenoidPin solenoid
+const int tankSolenoidPin = D8; // Water tank solenoid
+const int tankLevelPin = A0; // Analog pin for tank level sensor
 
-// Weather API variables                                                                                                                      
-const char* city = "Happy Valley, AU";              //Replace with your city name
-const char* apiKey = "OPENWEATHERAPIKEY";           //Get a free weather API @ https://openweathermap.org/
+const char* ssid = "DESKTOPHOTSPOT";
+const char* password = "speeduino11";
 
-// LCD Address
+String newSsid;
+String newPassword;
+
+WiFiManager wifiManager;
+
+String city = "Eden hills, AU";
+String apiKey = "2fe1ead3deaabdc5ae4a918a9c676aa0";
+
 LiquidCrystal_I2C lcd(0x27, 16, 2);
-
-// Address in EEPROM to start saving data
 int addr = 0;
 
-// Web server setup
 ESP8266WebServer server(80);
-
-// NTP client setup
 WiFiUDP ntpUDP;
+
 NTPClient timeClient(ntpUDP);
 
-// Solenoid valve setup
-const int valvePin = 12; //relay for solenoid 
-unsigned long valveStartTime = 0; //for duration timer
-unsigned long elapsedTime = 0;//for duration timer
+unsigned long valveStartTime[4] = {0}; // Start times for 4 zones
+unsigned long elapsedTime[4] = {0};
+bool valveOn[4] = {false};
+bool raining = false;
+bool weatherCheckRequired = false;
+bool wifiConnected = false;
 
-bool valveOn = false; //for valve on/off check    
-bool raining = false; //for raining/not raining check if true activate solenoid
+// Define the number of zones
+const int numZones = 4; // Adjust as needed
 
-// Watering schedule variables
-int startHour1 = 0; 
-int startMin1 = 0; 
-int startHour2 = 0; 
-int startMin2 = 0;
-int duration = 0;  
-
-// default watering days
-bool days[7] = {false, true, false, true, false, true, false}; //default days
-bool prevDays[7] = {false, false, false, false, false, false, false}; //days to saved not touchie 
-boolean enableSchedule2 = false; //Start 2 checkbox
+// Declare arrays for each parameter
+int startHour[numZones];
+int startMin[numZones];
+int duration[numZones];
+bool enableStartTime[numZones];
+bool days[4][7] =   {{false, true, false, true, false, true, false}, // Days for each zone
+                       {false, true, false, true, false, true, false},
+                       {false, true, false, true, false, true, false},
+                       {false, true, false, true, false, true, false}};
+bool prevDays[4][7] = {{false, false, false, false, false, false, false},
+                       {false, false, false, false, false, false, false},
+                       {false, false, false, false, false, false, false},
+                       {false, false, false, false, false, false, false}};
 
 void setup() {
- 
-  // Set up NTP client
-  timeClient.begin();
-  timeClient.setTimeOffset((9.5 + 1) * 3600); //SET TIMEZONE HERE--Currently set at: UTC+9:30 during standard time and UTC+10:30 during daylight saving time.
-  timeClient.update();
-    
-  // Start serial communication
-  Serial.begin(9600);
-  
-    // Initialize EEPROM
-  EEPROM.begin(512);
-  
-  // Load watering schedule from EEPROM
-  loadSchedule();
+  for (int i = 0; i < 4; i++) {
+    pinMode(valvePins[i], OUTPUT);
+    digitalWrite(valvePins[i], LOW);
+  }
 
-  //check/initilize for webui 
-  bool raining = checkRain();  
- 
-   // Initialize OTA
-  ArduinoOTA.begin(); 
-   
-  // Set the hostname of the ESP8266 for OTA
-  ArduinoOTA.setHostname("ESPIrrigation"); 
+    for (int i = 0; i < numZones; i++) {
+    startHour[i] = 0;
+    startMin[i] = 0;
+    duration[i] = 10; // Default duration in minutes
+    enableStartTime[i] = false; // Default to disabled
+  }
   
-  // Connect to WiFi network
+  pinMode(ledPin, OUTPUT);
+  digitalWrite(ledPin, HIGH);
+
+  timeClient.begin();
+  timeClient.setTimeOffset(10.5 * 3600);
+  timeClient.update();
+
+  Serial.begin(9600);
+  EEPROM.begin(512);
+
+  loadSchedule(); // Load the schedule from EEPROM
+
+  ArduinoOTA.begin();
+  ArduinoOTA.setHostname("ESPIrrigation");
+
+  unsigned long startMillis = millis();
   WiFi.begin(ssid, password);
   Serial.print("Connecting to ");
   Serial.print(ssid);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(1000);
+
+  while (WiFi.status() != WL_CONNECTED && millis() - startMillis < 30000) {
+    delay(500);
     Serial.print(".");
+    digitalWrite(ledPin, HIGH);
+    delay(500);
+    Serial.print(".");
+    digitalWrite(ledPin, LOW);
   }
-  Serial.println("");
-  Serial.println("WiFi connected");
 
-  // Initialize LCD screen
-  lcd.init();
-  lcd.backlight();
-  
-  // Print welcome message on LCD screen
-  lcd.setCursor(0, 0);
-  lcd.print("Smart Irrigation");
-  lcd.setCursor(4, 1);
-  lcd.print("System");
-  delay(1000);
-  lcd.clear();
-  
-  // Set up web server
-  server.on("/", handleRoot);
-  server.on("/submit", handleSubmit);
-  server.begin();
-
-  // turn off valve
-  pinMode(valvePin, OUTPUT);
-  digitalWrite(valvePin, LOW);
-  }
-  
-void loop() {
-  ArduinoOTA.handle(); // Handle OTA updates
-  unsigned long elapsedTime = (millis() - valveStartTime) / 1000;
-  checkWateringSchedule(elapsedTime); // Check if it's time to water
-  updateLCD(); // Update the LCD screen
-  server.handleClient(); // Handle incoming client requests
-  if (valveOn && (elapsedTime / 60 == duration)) {
-    turnOffValve();
-  }
-}
-
-// Function to update the LCD screen with the current time and IP address
-void updateLCD() { 
-    if (valveOn) {
+  if (WiFi.status() != WL_CONNECTED) {
+    // If not connected after 30 seconds, start AP mode
+    digitalWrite(ledPin, HIGH);
+    startAPMode();
+  } else {
+    // Wi-Fi connected
+    Serial.println("WiFi connected");
+    Serial.print("IP address: ");
+    Serial.println(WiFi.localIP());
+    digitalWrite(ledPin, LOW);
+    loadSchedule();
+    lcd.init();
+    lcd.backlight();
     lcd.setCursor(0, 0);
-    lcd.print("Runtime:");
-    unsigned long elapsedTime = (millis() - valveStartTime) / 1000;
-    lcd.print(elapsedTime / 60); // Display the minutes
-    lcd.print("m ");
-    lcd.print(elapsedTime % 60); // Display the seconds
-    lcd.print("s ");
-    lcd.setCursor(0, 1);
-    lcd.print("Duration: ");
-    lcd.print(duration);
-    lcd.print("m");
-  } else if (!valveOn) {
-    timeClient.update();
-    lcd.setCursor(4, 0);
-    lcd.print(timeClient.getFormattedTime());
-    lcd.setCursor(1, 1);
-    lcd.print("-");
-    lcd.print(WiFi.localIP());
-  }
-}
-
-void checkWateringSchedule(unsigned long elapsedTime) {
-  loadSchedule();
-  timeClient.update(); // Update the NTP client with the current time
-  int currentDay = timeClient.getDay(); // Get the current day of the week (0 = Sunday, 1 = Monday, etc.)
-  int currentHour = timeClient.getHours(); // Get the current hour (0-23)
-  int currentMin = timeClient.getMinutes();// Get the current minute (0-59)
-  
-  // Check if it's time to water for the first start time
-if (days[currentDay] && currentHour == startHour1 && currentMin == startMin1 && !valveOn) {
-  // If it's the right day and time for the first watering schedule, and the valve is not already on, turn on the valve for the specified duration
-    turnOnValve(); // Turn on the valve by setting the valve pin to HIGH
-} 
-
-if (enableSchedule2 && days[currentDay] && currentHour == startHour2 && currentMin == startMin2 && !valveOn) {
-  // If the second schedule is enabled, and it's the right day and time for the second watering schedule, and the valve is not already on, turn on the valve for the specified duration
-    turnOnValve();  
-  // Turn on the valve by setting the valve pin to HIGH
-}
-
-if (valveOn && (elapsedTime / 60 >= duration)) {
-    // If the valve has been running for longer than the specified duration, turn it off
-    turnOffValve(); // Turn off the valve by setting the valve pin to LOW
-  } else if (checkRain() == true) { 
-    turnOffValve();
-    lcd.clear();
+    lcd.print("Smart Irrigation");
     lcd.setCursor(4, 1);
-    lcd.print("Raining");
-    delay(60000);
+    lcd.print("System");
+    delay(1000);
     lcd.clear();
+
+
+server.on("/", HTTP_GET, handleRoot);
+server.on("/submit", HTTP_POST, handleSubmit);
+server.on("/wifi", HTTP_GET, handleWifi);
+server.on("/connect", HTTP_POST, handleConnect);
+
+// Set up valve control routes
+for (int i = 0; i < 4; i++) {
+  server.on("/valve/on" + String(i), HTTP_POST, [i]() { turnOnValveMan(i); });
+  server.on("/valve/off" + String(i), HTTP_POST, [i]() { turnOffValveMan(i); });
+}
+    server.begin();
   }
 }
-  
-// Function to turn on the valve
-void turnOnValve() {
-  valveStartTime = millis(); // Set the start time of the valve
-  digitalWrite(valvePin, HIGH); // Set the valve pin to HIGH
-  valveOn = true; // Set the valveOn flag to true
-  updateLCD();
-  }  
 
-// Function to turn off the valve
-void turnOffValve() {
-  digitalWrite(valvePin, LOW);// Set the valve pin to LOW
-  valveOn = false; // Set the valveOn flag to false
-  delay(1000);
+void loop() {
+  ArduinoOTA.handle();
+
+  for (int i = 0; i < 4; i++) {
+    unsigned long elapsedTime = (millis() - valveStartTime[i]) / 1000;
+    checkWateringSchedule(i, elapsedTime);
+  }
+
+  updateLCD();
+  server.handleClient();
+
+  // Check for rain only when submitting a watering request
+  if (weatherCheckRequired) {
+    if (weatherCheck()) {
+      turnOffAllValves();
+      displayRainMessage();
+    }
+    weatherCheckRequired = false; // Reset the flag
+  }
+}
+
+void updateLCD() {
+  for (int i = 0; i < 4; i++) {
+    if (valveOn[i]) {
+      lcd.setCursor(0, 0);
+      lcd.print("Zone " + String(i + 1) + " - Runtime:");
+      unsigned long elapsedTime = (millis() - valveStartTime[i]) / 1000;
+      lcd.print(elapsedTime / 60);
+      lcd.print("m ");
+      lcd.print(elapsedTime % 60);
+      lcd.print("s ");
+      lcd.setCursor(0, 1);
+      lcd.print("Duration: ");
+      lcd.print(duration[i]);
+      lcd.print("m ");
+    }
+  }
+}
+
+void checkWateringSchedule(int zone, unsigned long elapsedTime) {
+  loadSchedule();
+  timeClient.update();
+  int currentDay = timeClient.getDay();
+  int currentHour = timeClient.getHours();
+  int currentMin = timeClient.getMinutes();
+
+  if (shouldWater(zone, currentDay, currentHour, currentMin, startHour[zone], startMin[zone])) {
+    if (!valveOn[zone]) {
+      if (weatherCheck() && !weatherCheckRequired) {
+        Serial.println("It's raining. Valve will not be turned on.");
+        weatherCheckRequired = true;
+      } else {
+        turnOnValve(zone);
+        valveOn[zone] = true;
+      }
+    }
+  } else if (enableStartTime[zone] && shouldWater(zone, currentDay, currentHour, currentMin, startHour[zone + 2], startMin[zone + 2])) {
+    if (!valveOn[zone]) {
+      if (weatherCheck() && !weatherCheckRequired) {
+        Serial.println("It's raining. Valve will not be turned on.");
+        weatherCheckRequired = true;
+      } else {
+        turnOnValve(zone);
+        valveOn[zone] = true;
+      }
+    }
+  }
+
+  if (valveOn[zone] && hasValveReachedDuration(zone, elapsedTime)) {
+    turnOffValve(zone);
+    valveOn[zone] = false;
+    weatherCheckRequired = false;
+  }
+}
+
+bool hasValveReachedDuration(int zone, unsigned long elapsedTime) {
+  unsigned long totalDuration = valveStartTime[zone] + (duration[zone] * 60 * 1000);
+  return valveOn[zone] && (millis() >= totalDuration);
+}
+
+bool shouldWater(int zone, int currentDay, int currentHour, int currentMin, int targetHour, int targetMin) {
+  if (days[zone][currentDay]) {
+    if (currentHour == targetHour && currentMin == targetMin) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void displayRainMessage() {
+  lcd.clear();
+  lcd.setCursor(4, 1);
+  lcd.print("Raining");
+  delay(60000);
   lcd.clear();
   loop();
+}
+
+bool isTankLevelLow() {
+  // Read the tank level using the analog pin
+  int tankLevel = analogRead(tankLevelPin);
+
+  // Adjust the threshold based on your sensor and tank configuration
+  int threshold = 500;
+
+  return tankLevel < threshold;
+}
+
+void turnOnValve(int zone) {
+  delay(500);
+  valveStartTime[zone] = millis();
+
+  if (isTankLevelLow()) {
+    // If tank level is low, use mainsSolenoidPin solenoid
+    digitalWrite(mainsSolenoidPin, HIGH);
+    Serial.println("Using mainsSolenoidPin solenoid (master)");
+  } else {
+    // If tank level is above low, use water tank solenoid
+    digitalWrite(tankSolenoidPin, HIGH);
+    Serial.println("Using water tank solenoid (slave)");
   }
 
-void handleRoot() {
-  // Get the current time from the NTP server
-  delay(500);
-  bool raining = (getWeatherCondition() == "Rain");
-  timeClient.update();
-  String temperature = getTemperature();
-  String condition = getWeatherCondition();
-
-  String html = "<!DOCTYPE html><html><head><title>WiFi Irrigation Timer</title>";
-html += "<script>";
-html += "function updateTime() {";
-html += "  var now = new Date();";
-html += "  var hours = now.getHours().toString().padStart(2, '0');";
-html += "  var minutes = now.getMinutes().toString().padStart(2, '0');";
-html += "  var seconds = now.getSeconds().toString().padStart(2, '0');";
-html += "  var timeString = hours + ':' + minutes + ':' + seconds;";
-html += "  document.getElementById('time').textContent = timeString;";
-html += "}";
-html += "setInterval(updateTime, 1000);";
-html += "</script>";
-html += "</head><body>";
-html += "<h1>Watering Schedule</h1>";
-html += "<form action='/submit' method='POST'>";
-html += "<p>Current Time: <span id='time'>" + timeClient.getFormattedTime() + "</span></p>";
-html += "<p>Current Weather: " + condition + " -- Temp: " + String(temperature) + "&deg;C</p>";
-html += "<p>Rain Status: " + String(raining ? "Raining (Solenoid Disabled)" : "Not Raining (Solenoid Active)") + "</p>";
-html += "Watering Days:<br>";
-html += "<input type='checkbox' name='day_0' value='0'" + String(days[0] ? " checked" : "") + ">Sunday<br>";
-html += "<input type='checkbox' name='day_1' value='1'" + String(days[1] ? " checked" : "") + ">Monday<br>";
-html += "<input type='checkbox' name='day_2' value='2'" + String(days[2] ? " checked" : "") + ">Tuesday<br>";
-html += "<input type='checkbox' name='day_3' value='3'" + String(days[3] ? " checked" : "") + ">Wednesday<br>";
-html += "<input type='checkbox' name='day_4' value='4'" + String(days[4] ? " checked" : "") + ">Thursday<br>";
-html += "<input type='checkbox' name='day_5' value='5'" + String(days[5] ? " checked" : "") + ">Friday<br>";
-html += "<input type='checkbox' name='day_6' value='6'" + String(days[6] ? " checked" : "") + ">Saturday<br><br>";
-html += "Start Time 1:  <input type='number' name='start_hours_1' value='" + String(startHour1) + "' min='0' max='23'>";
-html += " <input type='number' name='start_mins_1' value='" + String(startMin1) + "' min='0' max='59'><br><br>";
-html += "Start Time 2:  <input type='number' name='start_hours_2' value='" + String(startHour2) + "' min='0' max='23'>";
-html += " <input type='number' name='start_mins_2' value='" + String(startMin2) + "' min='0' max='59'>";
-html += "<label><input type='checkbox' name='enableSchedule2' value='1'" + String(enableSchedule2 ? " checked" : "") + ">Enable-Disable</label><br><br>";
-html += "Duration:  <input type='number' name='duration' value='" + String(duration) + "' min='1' max='60'><br><br>";
-html += "<div style='display: inline-block;'>";
-html += "<div style='width: 15px; height: 15px; background-color: " + String(valveOn ? "blue" : "red") + ";'></div>";
-html += "</div>";
-html += "<div style='display: inline-block; margin-left: 20px;'>";
-html += "<p>Solenoid control:</p>";
-html += "<button name='valve' value='on' " + String(valveOn ? "disabled" : "") + ">Turn On</button> ";
-html += "<button name='valve' value='off' " + String(!valveOn ? "disabled" : "") + ">Turn Off</button>";
-html += "</div>";
-html += "<br><br><input type='submit' value='Submit'><br>";
-html += "</form></body></html>";
-if (valveOn) {
-  html += "<img src='https://i.gifer.com/origin/8a/8af4debd70ea382bab051de8ef97fa4b_w200.webp'>";    //GIF When on 
-} else {
-  html += "<img src='https://i.gifer.com/origin/f4/f47235010209779597489cbf00211674_w200.webp'>";    //GIF When off
+  if (!weatherCheck()) { // Check weather only when turning on the solenoid
+    digitalWrite(valvePins[zone], HIGH);
+    Serial.println("Valve " + String(zone + 1) + " On");
+    Serial.print("Duration: ");
+    Serial.print(duration[zone]);
+    Serial.println(" Mins");
+    updateLCD();
+    server.sendHeader("Location", "/", true);
+    server.send(302, "text/plain", "");
+  } else {
+    Serial.println("It's raining. Valve will not be turned on.");
+    turnOffValve(zone); // Turn off the valve immediately if it's raining
+  }
 }
-server.send(200, "text/html", html);
-server.sendHeader("Location", "/", true);
-server.send(302, "text/plain", "");
+
+// Function to turn on a specific valve manually
+void turnOnValveMan(int zone) {
+  digitalWrite(valvePins[zone], HIGH);
+
+  // Print debug information
+  Serial.print("Valve ");
+  Serial.print(zone + 1);
+  Serial.println(" On");
+
+  Serial.print("Duration: ");
+  Serial.print(duration[zone]);
+  Serial.println(" Mins");
+
+  updateLCD();
+  server.send(200, "text/plain", "Valve " + String(zone + 1) + " turned on");
+}
+
+void turnOffValve(int zone) {
+  digitalWrite(valvePins[zone], LOW);
+  Serial.println("Valve " + String(zone + 1) + " Off");
+  valveOn[zone] = false;
+  delay(800);
+  lcd.clear();
+  server.sendHeader("Location", "/", true);
+  server.send(302, "text/plain", "");
+  loop();
+}
+
+// Function to turn off a specific valve manually
+void turnOffValveMan(int zone) {
+  digitalWrite(valvePins[zone], LOW);
+  Serial.println("Valve " + String(zone + 1) + " Off");
+  updateLCD();
+  server.send(200, "text/plain", "Valve " + String(zone + 1) + " turned off");
+}
+
+// Function to turn off all valves
+void turnOffAllValves() {
+  for (int i = 0; i < numZones; ++i) {
+    digitalWrite(valvePins[i], LOW);
+  }
+}
+
+// Function to get the day name based on the day index
+String getDayName(int dayIndex) {
+  const char* daysOfWeek[] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+  if (dayIndex >= 0 && dayIndex < 7) {
+    return daysOfWeek[dayIndex];
+  }
+  return "Invalid Day";
+}
+
+String makeApiRequest(String endpoint) {
+  WiFiClient client;
+
+  if (client.connect("api.openweathermap.org", 80)) {
+    client.print("GET " + endpoint + "\r\n");
+    client.print("Host: api.openweathermap.org\r\n");
+    client.print("Connection: close\r\n\r\n");
+    client.flush();
+
+    String response = "";
+    unsigned long timeout = millis() + 10000;  // Set a timeout of 10 seconds
+
+    while (millis() < timeout) {
+      if (client.available()) {
+        char c = client.read();
+        response += c;
+        timeout = millis() + 10000;  // Reset the timeout on receiving data
+      }
+      delay(10);  // Small delay to prevent flooding the API
+    }
+
+    client.stop();
+
+    if (response.length() > 0) {
+      return response;
+    } else {
+      Serial.println("No response from the API");
+    }
+  } else {
+    Serial.println("Failed to connect to OpenWeatherMap API");
+  }
+
+  return "N/A";
+}
+
+String extractData(String response, String key) {
+  int keyIndex = response.indexOf("\"" + key + "\":") + key.length() + 3;
+  int endIndex = min(response.indexOf(',', keyIndex), response.indexOf('}', keyIndex));
+  return response.substring(keyIndex, endIndex);
+}
+
+String getWeatherData(String dataName) {
+  unsigned long startTime = millis();
+  String response;
+
+  while (millis() - startTime < 10000) { // Retry for up to 10 seconds
+    delay(1000); // Optional delay to prevent flooding the API with requests
+    String endpoint = "/data/2.5/weather?q=" + city + "&appid=" + apiKey + "&units=metric";
+    response = makeApiRequest(endpoint);
+
+    if (response != "N/A") {
+      if (dataName == "temperature") {
+        return extractData(response, "temp");
+      } else if (dataName == "humidity") {
+        return extractData(response, "humidity");
+      } else if (dataName == "windSpeed") {
+        return extractData(response, "speed");
+      } else if (dataName == "condition") {
+        return extractData(response, "main");
+      }
+    }
+  }
+
+  return "N/A"; // Return error message
+}
+
+bool weatherCheck() {
+  Serial.println("Checking Rain..");
+  WiFiClient client;
+
+  if (client.connect("api.openweathermap.org", 80)) {
+    String request = "GET /data/2.5/weather?q=" + city + "&appid=" + apiKey + "&units=metric\r\n";
+    request += "Host: api.openweathermap.org\r\n";
+    request += "Connection: close\r\n\r\n";
+
+    client.print(request);
+    client.flush();
+
+    DynamicJsonDocument jsonBuffer(1024); // Create a JSON buffer to store the API response
+    DeserializationError error = deserializeJson(jsonBuffer, client);
+
+    if (error) {
+      Serial.println("Failed to parse JSON");
+      client.stop();
+      return false; // Unable to parse JSON, consider it as no rain
+    }
+
+    const char* weatherCondition = jsonBuffer["weather"][0]["main"];
+    Serial.print("Weather Condition: ");
+    Serial.println(weatherCondition);
+
+    // Check if the weather condition indicates rain or drizzle
+    bool isRain = (strcmp(weatherCondition, "Rain") == 0 || strcmp(weatherCondition, "Drizzle") == 0);
+
+    client.stop();
+    return isRain;
+  } else {
+    Serial.println("Failed to connect to OpenWeatherMap API");
+    return false; // Connection to OpenWeatherMap failed
+  }
+}
+
+void handleRoot() {
+  timeClient.update();
+  String currentTime = timeClient.getFormattedTime();
+  String temperature = getWeatherData("temperature");
+  String humidity = getWeatherData("humidity");
+  String windSpeed = getWeatherData("windSpeed");
+  String condition = getWeatherData("condition");
+  // String tankLevelInfo = readTankLevel(); // Modify this line
+
+  String html = "<!DOCTYPE html><html><head><title>Smart Irrigation System</title>";
+  html += "<style>";
+  html += "body { font-family: Arial, sans-serif; background-color: #f2f2f2; margin: 0; }";
+  html += "header { background-color: #4CAF50; color: white; padding: 15px; text-align: center; }";
+  html += ".container { max-width: 600px; margin: 20px auto; padding: 20px; background-color: #fff; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); border-radius: 8px; }";
+  html += "h1 { text-align: center; }";
+  html += "p { margin-bottom: 10px; }";
+  html += ".zone-container { margin-bottom: 20px; padding: 15px; background-color: #f9f9f9; border-radius: 5px; }";
+  html += ".days-container { display: flex; margin-bottom: 10px; }";
+  html += ".checkbox-container { margin-right: 10px; }";
+  html += ".time-duration-container { display: flex; align-items: center; }";
+  html += ".time-input, .duration-input { margin-right: 20px; }";
+  html += ".manual-control-container { margin-top: 10px; }";
+  html += ".turn-on-btn, .turn-off-btn { padding: 10px 15px; margin-right: 10px; background-color: #4caf50; color: #fff; border: none; border-radius: 3px; cursor: pointer; }";
+  html += ".turn-off-btn { background-color: #f44336; }";
+  html += "button[type='submit'] { background-color: #2196F3; color: white; padding: 10px 15px; border: none; border-radius: 3px; cursor: pointer; }";
+  html += "</style></head>";
+  html += "<body>";
+  html += "<header><h1>Smart Irrigation System</h1></header>";
+  html += "<div class='container'>";
+// html += "<p>" + tankLevelPin + "</p>";
+  html += "<p id='clock' style='text-align: center;'>Current Time: " + currentTime + "</p>";
+  html += "<p style='text-align: center;'>Temperature: " + temperature + " &#8451;</p>";
+  html += "<p style='text-align: center;'>Condition: " + condition + "</p>";
+  html += "<p style='text-align: center;'>Humidity: " + humidity + " %</p>";
+  html += "<p style='text-align: center;'>Wind Speed: " + windSpeed + " m/s</p>";
+
+  // JavaScript to update the clock every second
+  html += "<script>";
+  html += "function updateClock() {";
+  html += "var now = new Date();";
+  html += "var hours = now.getHours().toString().padStart(2, '0');";
+  html += "var minutes = now.getMinutes().toString().padStart(2, '0');";
+  html += "var seconds = now.getSeconds().toString().padStart(2, '0');";
+  html += "document.getElementById('clock').textContent = 'Current Time: ' + hours + ':' + minutes + ':' + seconds;";
+  html += "}";
+  // Update the clock every second
+  html += "setInterval(updateClock, 1000);";
+  html += "</script>";
+
+  // Form for updating watering schedule
+  html += "<form action='/submit' method='POST'>";
+
+  // Display the days of the week, start times, duration, and manual control buttons for each zone
+  for (int zone = 0; zone < numZones; zone++) {
+    html += "<div class='zone-container'>";
+    html += "<p><strong>Zone " + String(zone + 1) + ":</strong></p>";
+
+    // Days checkboxes
+    html += "<div class='days-container'>";
+    for (int i = 0; i < 7; i++) {
+      String dayLabel = getDayName(i);
+      String checked = days[zone][i] ? "checked" : "";
+      html += "<div class='checkbox-container'>";
+      html += "<input type='checkbox' name='day" + String(zone) + "_" + String(i) + "' id='day" + String(zone) + "_" + String(i) + "' " + checked + ">";
+      html += "<label for='day" + String(zone) + "_" + String(i) + "'>" + dayLabel + "</label>";
+      html += "</div>";
+    }
+    html += "</div>";
+
+// Start times and duration
+    html += "<div class='time-duration-container'>";
+    html += "<div class='time-input'>";
+    html += "<label for='startHour" + String(zone) + "'>Start Time:</label>";
+    html += "<input type='number' name='startHour" + String(zone) + "' id='startHour" + String(zone) + "' min='0' max='23' value='" + String(startHour[zone]) + "' required style='width: 30px;'> :";
+    html += "<input type='number' name='startMin" + String(zone) + "' id='startMin" + String(zone) + "' min='0' max='59' value='" + String(startMin[zone]) + "' required style='width: 30px;'>";
+    html += "</div>";
+
+    html += "<div class='duration-input'>";
+    html += "<label for='duration" + String(zone) + "'>Duration (minutes):</label>";
+    html += "<input type='number' name='duration" + String(zone) + "' id='duration" + String(zone) + "' min='0' value='" + String(duration[zone]) + "' required style='width: 30px;'>";
+    html += "</div>";
+    html += "</div>";
+
+    // Manual control buttons
+    html += "<div class='manual-control-container'>";
+    html += "<button type='button' class='turn-on-btn' data-zone='" + String(zone) + "'>Turn On</button>";
+    html += "<button type='button' class='turn-off-btn' data-zone='" + String(zone) + "'>Turn Off</button>";
+    html += "</div>";
+
+    html += "</div>"; // End of zone-container
+  }
+
+  // JavaScript to handle manual control buttons
+  html += "<script>";
+  html += "document.addEventListener('DOMContentLoaded', function() {";
+  html += "  var turnOnButtons = document.querySelectorAll('.turn-on-btn');";
+  html += "  var turnOffButtons = document.querySelectorAll('.turn-off-btn');";
+
+  html += "  turnOnButtons.forEach(function(button) {";
+  html += "    button.addEventListener('click', function() {";
+  html += "      var zone = this.getAttribute('data-zone');";
+  html += "      sendValveControl('/valve/on' + zone);";
+  html += "    });";
+  html += "  });";
+
+  html += "  turnOffButtons.forEach(function(button) {";
+  html += "    button.addEventListener('click', function() {";
+  html += "      var zone = this.getAttribute('data-zone');";
+  html += "      sendValveControl('/valve/off' + zone);";
+  html += "    });";
+  html += "  });";
+
+  // Function to send valve control requests to the server
+  html += "  function sendValveControl(route) {";
+  html += "    fetch(route, { method: 'POST' })";
+  html += "      .then(response => response.text())";
+  html += "      .then(data => console.log(data))";
+  html += "      .catch(error => console.error('Error:', error));";
+  html += "  }";
+
+  html += "});";
+  html += "</script>";
+
+  // Submit button
+  html += "<button type='submit'>Update Schedule</button></form>";
+
+  html += "</div></body></html>";
+
+  server.send(200, "text/html", html);
 }
 
 void handleSubmit() {
-  // Update watering schedule settings
-  startHour1 = server.arg("start_hours_1").toInt();
-  startMin1 = server.arg("start_mins_1").toInt();
-  startHour2 = server.arg("start_hours_2").toInt();
-  startMin2 = server.arg("start_mins_2").toInt();
-  duration = server.arg("duration").toInt();
-  enableSchedule2 = server.hasArg("enableSchedule2");
+  for (int zone = 0; zone < numZones; zone++) {
+    for (int i = 0; i < 7; i++) {
+      prevDays[zone][i] = days[zone][i];
+      days[zone][i] = server.arg("day" + String(zone) + "_" + String(i)) == "on";
+    }
 
-  for (int i = 0; i < 7; i++) {
-    // save selected days
-    prevDays[i] = days[i]; // save previous state
-    days[i] = server.hasArg("day_" + String(i)) ? true : false; // update state based on checkbox
+    startHour[zone] = server.arg("startHour" + String(zone)).toInt();
+    startMin[zone] = server.arg("startMin" + String(zone)).toInt();
+    duration[zone] = server.arg("duration" + String(zone)).toInt();
+    enableStartTime[zone] = server.arg("enableStartTime" + String(zone)) == "on";
   }
 
-  saveSchedule(); // Save values to EEPROM
-
-  // Display updated watering schedule settings on LCD screen
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("S1-" + String(startHour1) + ":" + String(startMin1) + " S2-" + String(startHour2) + ":" + String(startMin2));
-  lcd.setCursor(0, 1);
-  lcd.print("Duration: " + String(duration) + " Mins");
-  delay(1500);
-  lcd.clear();
-
-  // Control valve based on form input
-  if (server.arg("valve") == "on") {
-    turnOnValve();
-  } else if (server.arg("valve") == "off") {
-    digitalWrite(valvePin, LOW);
-    turnOffValve();
-  }
-
-  // Send response to client
+  saveSchedule(); // Save the schedule to EEPROM
   server.sendHeader("Location", "/", true);
   server.send(302, "text/plain", "");
 }
 
-void saveSchedule() {
+void handleWifi() {
+  // Initialize WiFiManager
+  WiFiManager wifiManager;
   
-   int address = 0;
-
-  // Save the days array
-  for (int i = 0; i < 7; i++) {
-    EEPROM.write(address, days[i]);
-    address++;
+  // Create a custom HTML form with WiFi Manager
+  wifiManager.setConfigPortalTimeout(180); // Set configuration portal timeout to 3 minutes
+  wifiManager.setMinimumSignalQuality(-1); // Set minimum signal quality for autoconnect
+  
+  if (!wifiManager.startConfigPortal("ESPIrrigationAP")) {
+    // Failed to connect or configure, restart the ESP
+    ESP.restart();
   }
+  
+  if (WiFi.status() == WL_CONNECTED) {
+    // WiFi connected
+    Serial.println("WiFi connected");
+    Serial.print("IP address: ");
+    Serial.println(WiFi.localIP());
+    loop();
+  }
+}
+  
+void startAPMode() {
+  Serial.println("Failed to connect to Wi-Fi. Starting AP mode.");
+  WiFiManager wifiManager;
+  wifiManager.autoConnect("ESPIrrigationAP");
+  // After configuring Wi-Fi, check the connection again
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("WiFi connected");
+    Serial.print("IP address: ");
+    Serial.println(WiFi.localIP());
+    // Initialize your other components here...
+  } else {
+    Serial.println("Still not connected to Wi-Fi. Retrying...");
+    digitalWrite(ledPin, LOW);
+    delay(1000);
+    digitalWrite(ledPin, HIGH);
+    delay(4000); // Wait for 5 seconds before retrying
+    startAPMode(); // Retry AP mode
+  }
+} 
 
-  // Save the start times and duration
-  EEPROM.write(address, startHour1);
-  address++;
-  EEPROM.write(address, startMin1);
-  address++;
-  EEPROM.write(address, startHour2);
-  address++;
-  EEPROM.write(address, startMin2);
-  address++;
-  EEPROM.write(address, duration);
-  address++;
+void handleConnect() {
+  newSsid = server.arg("ssid");
+  newPassword = server.arg("password");
 
-  // Save the enableSchedule2 flag
-  EEPROM.write(address, enableSchedule2);
-  address++;
+  // Create an instance of WiFiManager
+  WiFiManager wifiManager;
 
-  // Commit the changes to EEPROM
+  // Disconnect from any previous connections
+  WiFi.disconnect();
+  delay(1000);
+
+  // Use the autoConnect method of WiFiManager to connect to the new network
+  if(wifiManager.autoConnect(newSsid.c_str(), newPassword.c_str())) {
+    Serial.println("WiFi connected");
+    Serial.print("IP address: ");
+    Serial.println(WiFi.localIP());
+    wifiConnected = true;
+    server.sendHeader("Location", "/", true);
+    server.send(302, "text/plain", "");
+  } else {
+    Serial.println("Failed to connect to new WiFi...");
+  }
+}
+
+void saveSchedule() {
+  // Store the schedule in EEPROM
+  addr = 0;
+  for (int i = 0; i < numZones; i++) {
+    EEPROM.write(addr, startHour[i]);
+    EEPROM.write(addr + 1, startMin[i]);
+    EEPROM.write(addr + 2, duration[i]);
+    EEPROM.write(addr + 3, enableStartTime[i]);
+    addr += 4; // Move to the next zone's starting address
+  }
+  for (int i = 0; i < 7; i++) {
+    EEPROM.write(addr, days[0][i] ? 1 : 0);
+    addr++;
+  }
   EEPROM.commit();
 }
 
 void loadSchedule() {
-  int address = 0;
+  // Load the schedule from EEPROM
+  addr = 0;
+  // Load variables for each zone
+  for (int i = 0; i < numZones; i++) {
+    startHour[i] = EEPROM.read(addr);
+    startMin[i] = EEPROM.read(addr + 1);
+    duration[i] = EEPROM.read(addr + 2);
+    enableStartTime[i] = EEPROM.read(addr + 3);
+    addr += 4; // Move to the next zone's starting address
+  }
 
-  // Load the days array
+  // Load days array
   for (int i = 0; i < 7; i++) {
-    days[i] = EEPROM.read(address);
-    address++;
+    days[0][i] = EEPROM.read(addr) == 1;
+    addr++;
   }
-
-  // Load the start times and duration
-  startHour1 = EEPROM.read(address);
-  address++;
-  startMin1 = EEPROM.read(address);
-  address++;
-  startHour2 = EEPROM.read(address);
-  address++;
-  startMin2 = EEPROM.read(address);
-  address++;
-  duration = EEPROM.read(address);
-  address++;
-
-  // Load the enableSchedule2 flag
-  enableSchedule2 = EEPROM.read(address);
-  address++;
+    enableStartTime[0] = EEPROM.read(addr);
+  addr++;
 }
 
-bool checkRain() {
-  // Make a GET request to the OpenWeatherMap API to get the current weather data
-  String url = "http://api.openweathermap.org/data/2.5/weather?q=" + String(city) + "&appid=" + String(apiKey);
-  WiFiClient client;
-  if (client.connect("api.openweathermap.org", 80)) {
-    client.println("GET " + url + " HTTP/1.1");
-    client.println("Host: api.openweathermap.org");
-    client.println("Connection: close");
-    client.println();
-  } else {
-    Serial.println("Could not connect to weather API");
-    return false;
-  }
-// Read the response from the API and extract the weather condition
-  String response = "";
-  while (client.connected()) {
-    String line = client.readStringUntil('\n');
-    if (line == "\r") {
-      break;
-    }
-  }
-  while (client.available()) {
-    response += (char)client.read();
-  }
-  client.stop();
-  String condition = "";
-  if (response.length() > 0) {
-    DynamicJsonDocument doc(1024);
-    deserializeJson(doc, response);
-    condition = doc["weather"][0]["main"].as<String>();
-  }
-    // Check if it's raining and return a boolean value indicating whether it's raining or not
-  if (condition == "Rain" || condition == "Drizzle" || condition == "Thunderstorm") {
-    turnOffValve();
-    return true;
-  } else {
-    return false;
-  }
-}  
-  
-String getWeatherCondition() {
-  String url = "http://api.openweathermap.org/data/2.5/weather?q=" + String(city) + "&appid=" + String(apiKey);
-  WiFiClient client;
-  if (client.connect("api.openweathermap.org", 80)) {
-    client.println("GET " + url + " HTTP/1.1");
-    client.println("Host: api.openweathermap.org");
-    client.println("Connection: close");
-    client.println();
-  } else {
-    Serial.println("Could not connect to weather API");
-    return "Error: Could not connect to weather API";
-  }
 
-  // Read the response from the API and extract the weather condition
-  String response = "";
-  while (client.connected()) {
-    String line = client.readStringUntil('\n');
-    if (line == "\r") {
-      break;
-    }
-  }
-  while (client.available()) {
-    response += (char)client.read();
-  }
-  client.stop();
-  String condition = "";
-  if (response.length() > 0) {
-    DynamicJsonDocument doc(1024);
-    deserializeJson(doc, response);
-    condition = doc["weather"][0]["main"].as<String>();
-  }
-  delay(500);
-  return condition; // return the weather condition
-}
-
-String getTemperature() {
-  String url = "http://api.openweathermap.org/data/2.5/weather?q=" + String(city) + "&appid=" + String(apiKey);
-  WiFiClient client;
-  if (client.connect("api.openweathermap.org", 80)) {
-    client.println("GET " + url + " HTTP/1.1");
-    client.println("Host: api.openweathermap.org");
-    client.println("Connection: close");
-    client.println();
-  } else {
-    Serial.println("Could not connect to weather API");
-    return "Error: Could not connect to weather API";
-  }
-
-  String response = "";
-  while (client.connected()) {
-    String line = client.readStringUntil('\n');
-    if (line == "\r") {
-      break;
-    }
-  }
-  while (client.available()) {
-    response += (char)client.read();
-  }
-  client.stop();
-
-  if (response.length() > 0) {
-    DynamicJsonDocument doc(1024);
-    deserializeJson(doc, response);
-    float temperature = doc["main"]["temp"].as<float>();
-    temperature -= 273.15;
-    delay(500);
-    return String(temperature);
-  } else {
-    Serial.println("Could not connect to weather API");
-    return "Error: Could not connect to weather API";
-  }
-}
-
-//End
 
