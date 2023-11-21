@@ -25,8 +25,7 @@ const char *ssid = "yrwifissid"; //default wifi creds can be added in AP mode
 const char *password = "yrpassword"; //default wifi creds can be added in AP mode
 String city = "Eden hills, AU"; // Suburb, Country.
 String apiKey = "yrapikeyfrom-openweathermap.org";  //Get a free api at www.openweathermap.org
-
-//----TIMEZONE settings IN void setup()---///
+//----Timezone settings in void setup()---///
 
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);
