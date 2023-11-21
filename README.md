@@ -9,6 +9,7 @@ Web UI
 
 Wiring Diagram
 
-![irrigation wiring](https://github.com/numerik11/Irrigation-Controller-ESP8266/assets/72150418/6cad0622-c3a9-41d6-baa0-c047917b04f2)
+![irrigation wiring](https://github.com/numerik11/Irrigation-Controller-ESP8266/assets/72150418/aa0824bc-d75d-4b12-be2a-a58135102101)
+
 
 Stabbe but Work in progress
