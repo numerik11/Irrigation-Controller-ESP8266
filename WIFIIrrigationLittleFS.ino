@@ -20,8 +20,8 @@ const int tankSolenoidPin = D8; // Water tank solenoid
 const int tankLevelPin = A0; // Analog pin for tank level sensor
 
 //--------ENTER YOUR DETAILS------------////----Timezone settings in void setup()---///
-const char *ssid = "yrwifissid"; //default wifi creds can be added in AP mode
-const char *password = "yrpassword"; //default wifi creds can be added in AP mode
+const char *ssid = "yrwifissid"; //Default wifi creds can be added in AP mode also
+const char *password = "yrpassword"; //Default wifi creds can be added in AP mode also
 String city = "Eden hills, AU"; // Suburb, Country.
 String apiKey = "yrapikeyfrom-openweathermap.org";  //Get a free api at www.openweathermap.org
 
