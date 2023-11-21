@@ -19,22 +19,24 @@ const int mainsSolenoidPin = D7; // MainsSolenoidPin solenoid
 const int tankSolenoidPin = D8; // Water tank solenoid
 const int tankLevelPin = A0; // Analog pin for tank level sensor
 
-const char *ssid = "DESKTOPHOTSPOT"; //defaults
-const char *password = "speeduino11"; //defaults wifi creds can be added in AP mode
+
+//--------ENTER YOUR DETAILS------------//
+const char *ssid = "yrwifissid"; //default wifi creds can be added in AP mode
+const char *password = "yrpassword"; //default wifi creds can be added in AP mode
+String city = "Eden hills, AU"; // Suburb, Country.
+String apiKey = "yrapikeyfrom-openweathermap.org";  //Get a free api at www.openweathermap.org
+timeClient.begin();
+timeClient.setTimeOffset(10.5 * 3600); // SET YOUR TIMEZONE HERE!
+timeClient.update();
+
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+int addr = 0;
 
 WiFiManager wifiManager;
 ESP8266WebServer server(80);
 
 String newSsid;
 String newPassword;
-
-String city = "Eden hills, AU";
-String apiKey = "2fe1ead3deaabdc5ae4a918a9c676aa0";
-
-LiquidCrystal_I2C lcd(0x27, 16, 2);
-int addr = 0;
-
-
 WiFiUDP ntpUDP;
 
 NTPClient timeClient(ntpUDP);
@@ -78,10 +80,6 @@ void setup() {
   
   pinMode(ledPin, OUTPUT);
   digitalWrite(ledPin, HIGH);
-
-  timeClient.begin();
-  timeClient.setTimeOffset(10.5 * 3600);
-  timeClient.update();
 
   Serial.begin(115200);
   LittleFS.begin();
