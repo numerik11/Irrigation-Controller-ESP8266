@@ -14,7 +14,7 @@
 #include <LittleFS.h>
 
 const int valvePins[] = {D0, D3, D5, D6}; // Pins for 4 solenoids
-const int ledPin = D4; // onboard led
+const int ledPin = D4; // Onboard led
 const int mainsSolenoidPin = D7; // MainsSolenoidPin solenoid
 const int tankSolenoidPin = D8; // Water tank solenoid
 const int tankLevelPin = A0; // Analog pin for tank level sensor
