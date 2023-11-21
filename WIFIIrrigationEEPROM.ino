@@ -21,7 +21,6 @@ const int tankLevelPin = A0; // Analog pin for tank level sensor
 
 
 //-------------Enter Details-----------------//
-
 const char* ssid = "yourwifi";
 const char* password = "passwerd";
 String city = "Eden hills, AU";
