@@ -25,9 +25,9 @@ const char *ssid = "yrwifissid"; //default wifi creds can be added in AP mode
 const char *password = "yrpassword"; //default wifi creds can be added in AP mode
 String city = "Eden hills, AU"; // Suburb, Country.
 String apiKey = "yrapikeyfrom-openweathermap.org";  //Get a free api at www.openweathermap.org
-timeClient.begin();
-timeClient.setTimeOffset(10.5 * 3600); // SET YOUR TIMEZONE HERE!
-timeClient.update();
+
+//----TIMEZONE settings IN void setup()---///
+
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 int addr = 0;
@@ -80,7 +80,9 @@ void setup() {
   
   pinMode(ledPin, OUTPUT);
   digitalWrite(ledPin, HIGH);
-
+  timeClient.begin();
+  timeClient.setTimeOffset(10.5 * 3600); // ---------------SET YOUR TIMEZONE HERE!---------------------//
+  timeClient.update();
   Serial.begin(115200);
   LittleFS.begin();
  if (!LittleFS.begin()) {
