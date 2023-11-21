@@ -19,17 +19,18 @@ const int mainsSolenoidPin = D7; // MainsSolenoidPin solenoid
 const int tankSolenoidPin = D8; // Water tank solenoid
 const int tankLevelPin = A0; // Analog pin for tank level sensor
 
+
+//-------------Enter Details-----------------//
+
 const char* ssid = "yourwifi";
 const char* password = "passwerd";
+String city = "Eden hills, AU";
+String apiKey = "your openweathermap.org api";
+//---------------------------------------------//
 
 String newSsid;
 String newPassword;
-
 WiFiManager wifiManager;
-
-String city = "Eden hills, AU";
-String apiKey = "your openweathermap.org api";
-
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 int addr = 0;
 
@@ -79,7 +80,7 @@ void setup() {
   digitalWrite(ledPin, HIGH);
 
   timeClient.begin();
-  timeClient.setTimeOffset(10.5 * 3600);
+  timeClient.setTimeOffset(10.5 * 3600);  //------------------Enter Timezone Here--------------------------//
   timeClient.update();
 
   Serial.begin(9600);
