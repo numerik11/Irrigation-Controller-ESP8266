@@ -28,7 +28,7 @@ String newPassword;
 WiFiManager wifiManager;
 
 String city = "Eden hills, AU";
-String apiKey = "2fe1ead3deaabdc5ae4a918a9c676aa0";
+String apiKey = "your openweathermap.org api";
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 int addr = 0;
