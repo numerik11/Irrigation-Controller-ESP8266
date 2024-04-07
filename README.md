@@ -8,10 +8,16 @@
 
 CityID Number, eg. : "2078025"  
 DST offset eg. : "-1" for daylight savings, 
-API KEY eg : "345e1asdfdeaabdc5adgs918a9cfsuaa" which can be obtained from [](https://openweathermap.org/api)
+API KEY eg : "345e1asdfdeaabdc5adgs918a9cfsuaa" 
 
-The controller can be set up with a watering schedule, it can check the local weather forecast to determine if it should turn on or not. It also includes features i2c 16x2 LCD screen to display weather, runtime duration, rain staus and Local IP. 
-Access WEB UI In the address bar of the web browser, type in Local IP address displayed on the LCD on start up. Values are stored in LittleFS and will remain if there is reset/power loss. 
+This can be obtained from [](https://openweathermap.org/api)
+
+The controller can be set up with a watering schedule, it can check the local weather forecast
+to determine if it should turn on or not. It also includes features i2c 16x2 LCD screen to display weather, 
+runtime duration, rain staus and Local IP. Access WEB UI In the address bar of the web browser,
+type in Local IP address displayed on the LCD on start up.
+
+Values are stored in LittleFS and will remain if there is reset or power loss. 
 
 Web UI
 
