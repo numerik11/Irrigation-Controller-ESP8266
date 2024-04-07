@@ -1,39 +1,39 @@
 #include <ArduinoJson.h>
 #include <ArduinoOTA.h>
 #include <DNSServer.h>
+#include <ESP8266HTTPClient.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266WiFi.h>
-#include <ESP8266HTTPClient.h>
 #include <LiquidCrystal_I2C.h>
 #include <NTPClient.h>
-#include <WiFiClient.h>
 #include <WiFiClientSecure.h>
 #include <WiFiManager.h>
 #include <WiFiUdp.h>
 #include <Wire.h>
 #include <LittleFS.h>
 
-const int valvePins[] = {D0, D3, D5, D6}; // Pins for 4 solenoids
-const int ledPin = D4; // Onboard led
-const int mainsSolenoidPin = D7; // MainsSolenoidPin solenoid
-const int tankSolenoidPin = D8; // Water tank solenoid
+// Constants for pins
+const int valvePins[4] = {D0, D3, D5, D6}; // Pins for 4 solenoids
+const int ledPin = D4; // Onboard LED pin
+const int mainsSolenoidPin = D7; // Mains solenoid pin
+const int tankSolenoidPin = D8; // Water tank solenoid pin
 const int tankLevelPin = A0; // Analog pin for tank level sensor
 
-//--------ENTER YOUR DETAILS------------////----Timezone settings in void setup()---///
-const char *ssid = "yrwifissid"; //Default wifi creds can be added in AP mode also
-const char *password = "yrpassword"; //Default wifi creds can be added in AP mode also
-String city = "Eden hills, AU"; // Suburb, Country.
-String apiKey = "yrapikeyfrom-openweathermap.org";  //Get a free api at www.openweathermap.org
+// WiFi credentials
+const char* ssid = "your_wifi_ssid";
+const char* password = "your_wifi_password";
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);
-int addr = 0;
 
 WiFiManager wifiManager;
 ESP8266WebServer server(80);
-
+WiFiClient client;
 String newSsid;
 String newPassword;
+String apiKey;
+String city;
 WiFiUDP ntpUDP;
+String dstAdjustment;
 
 NTPClient timeClient(ntpUDP);
 
@@ -43,11 +43,17 @@ bool valveOn[4] = {false};
 bool raining = false;
 bool weatherCheckRequired = false;
 bool wifiConnected = false;
+String condition; // Declare condition globally
+float temperature; // Declare temperature globally
+float humidity; // Declare humidity globally
+float windSpeed; // Declare windSpeed globally
+float rain; // Declare windSpeed globally
 
 // Define the number of zones
 const int numZones = 4; // Adjust as needed
 
 // Declare arrays for each parameter
+
 int startHour[numZones];
 int startMin[numZones];
 int duration[numZones];
@@ -62,85 +68,102 @@ bool prevDays[4][7] = {{false, false, false, false, false, false, false},
                        {false, false, false, false, false, false, false}};
 
 void setup() {
-    for (int i = 0; i < 4; i++) {
+  // Initialize pins
+  for (int i = 0; i < 4; i++) {
     pinMode(valvePins[i], OUTPUT);
     digitalWrite(valvePins[i], LOW);
   }
 
-    for (int i = 0; i < numZones; i++) {
-    startHour[i] = 0;
-    startMin[i] = 0;
-    duration[i] = 10; // Default duration in minutes
-    enableStartTime[i] = false; // Default to disabled
-  }
-  
   pinMode(ledPin, OUTPUT);
   digitalWrite(ledPin, HIGH);
-  timeClient.begin();
-  timeClient.setTimeOffset(10.5 * 3600); // ---------------SET YOUR TIMEZONE HERE!---------------------//
-  timeClient.update();
   Serial.begin(115200);
-  LittleFS.begin();
- if (!LittleFS.begin()) {
-   Serial.println("Failed to mount LittleFS");
-   return;
- }
+  // Initialize LCD
+  lcd.init();
+  lcd.backlight();
+  lcd.setCursor(0, 0);
+  lcd.print("Smart Irrigation");
+  lcd.setCursor(4, 1);
+  lcd.print("System");
+  delay(2000);
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("AP Mode");
+  lcd.setCursor(0, 1);
+  lcd.print("IP:192.168.4.1");
+  
+  // Begin LittleFS
+  if (!LittleFS.begin()) {
+    Serial.println("Failed to mount LittleFS");
+    return;
+  }
 
-  loadSchedule(); // Load the schedule from EEPROM
+  // Load schedule from LittleFS
+  loadSchedule();
+  loadConfig();
 
+  wifiManager.autoConnect("ESPIrrigationAP");
+  // Connected to WiFi
+  Serial.println("WiFi connected");
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+  Serial.print("SSID: ");
+  Serial.println(WiFi.SSID());
+  Serial.print("Signal strength (RSSI): ");
+  Serial.println(WiFi.RSSI());
+  // Display connection status and details on LCD
+  lcd.setCursor(0, 0);
+  lcd.print(WiFi.SSID());
+  lcd.setCursor(0, 1);
+  lcd.print(WiFi.localIP());
+  delay(5000);
+ 
+
+   // Fetch weather data
+  String weatherData = getWeatherData();
+
+  // Deserialize weather data
+  DynamicJsonDocument jsonResponse(1024); // Adjust the size as needed
+  deserializeJson(jsonResponse, weatherData);
+
+  // Extract weather information
+  String condition = jsonResponse["weather"][0]["main"].as<String>(); // Extract condition
+  float temperature = jsonResponse["main"]["temp"].as<float>(); // Extract temperature
+
+  // Display weather information on LCD
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Cond: " + condition);
+  lcd.setCursor(0, 1);
+  lcd.print("Temp: " + String(temperature) + "C");
+
+  // Set up NTP client
+  timeClient.begin();
+  timeClient.setTimeOffset(10.5 * 3600); // Set timezone offset (adjust as needed)
+
+  // Set up OTA
   ArduinoOTA.begin();
   ArduinoOTA.setHostname("ESPIrrigation");
-
- unsigned long startMillis = millis();
- 
-  WiFi.begin(ssid, password);
   
-  while (WiFi.status() != WL_CONNECTED && millis() - startMillis < 10000) {
-    delay(500);
-    Serial.print(".");
-    digitalWrite(ledPin, HIGH);
-    delay(500);
-    Serial.print(".");
-    digitalWrite(ledPin, LOW);
+  // Set up HTTP routes
+  server.on("/", HTTP_GET, handleRoot);
+  server.on("/submit", HTTP_POST, handleSubmit);
+  server.on("/setup", HTTP_GET, handleSetupPage);
+  server.on("/configure", HTTP_POST, handleConfigure); 
+
+  for (int i = 0; i < 4; i++) {
+    server.on("/valve/on" + String(i), HTTP_POST, [i]() { turnOnValveMan(i); });
+    server.on("/valve/off" + String(i), HTTP_POST, [i]() { turnOffValveMan(i); });
   }
-  if (WiFi.status() != WL_CONNECTED) {
-    // If not connected after 30 seconds, start AP mode
-    digitalWrite(ledPin, HIGH);  
-    handleConnect();
-  } else {
-    // Wi-Fi connected
-    digitalWrite(ledPin, LOW);
-    loadSchedule();
-    lcd.init();
-    lcd.backlight();
-    lcd.setCursor(0, 0);
-    lcd.print("Smart Irrigation");
-    lcd.setCursor(4, 1);
-    lcd.print("System");
-    delay(1000);
-    lcd.clear();
 
- server.on("/", HTTP_GET, handleRoot);
- server.on("/submit", HTTP_POST, handleSubmit);
- server.on("/wifi", HTTP_GET, handleWifi);
- server.on("/connect", HTTP_POST, handleConnect);
-
- // Set up valve control routes
- for (int i = 0; i < 4; i++) {
-  server.on("/valve/on" + String(i), HTTP_POST, [i]() { turnOnValveMan(i); });
-  server.on("/valve/off" + String(i), HTTP_POST, [i]() { turnOffValveMan(i); });
-    }
-    server.begin();
-   }
- }
-
+  // Start the server
+  server.begin();
+}
 
 void loop() {
   ArduinoOTA.handle();
 
-  for (int i = 0; i < 4; i++) {
-    unsigned long elapsedTime = (millis() - valveStartTime[i]) / 1000;
-    checkWateringSchedule(i, elapsedTime);
+  for (int i = 0; i < numZones; i++) {
+    checkWateringSchedule(i, dstAdjustment.toInt());
   }
 
   updateLCD();
@@ -148,7 +171,7 @@ void loop() {
 
   // Check for rain only when submitting a watering request
   if (weatherCheckRequired) {
-    if (weatherCheck()) {
+    if (checkForRain()) {
       turnOffAllValves();
       displayRainMessage();
     }
@@ -156,72 +179,47 @@ void loop() {
   }
 }
 
+bool checkForRain() {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi is not connected. Weather check failed.");
+    return false;
+  }
+
+  String weatherData = getWeatherData();
+  DynamicJsonDocument jsonResponse(1024);
+
+  DeserializationError error = deserializeJson(jsonResponse, weatherData);
+  if (error) {
+    Serial.println("Failed to parse weather data.");
+    return false;
+  }
+
+  String weatherCondition = jsonResponse["weather"][0]["main"].as<String>();
+
+  Serial.print("Weather condition: ");
+  Serial.println(weatherCondition);
+
+  bool raining = (weatherCondition.equalsIgnoreCase("Rain") || weatherCondition.equalsIgnoreCase("Drizzle"));
+
+  if (raining) {
+    Serial.println("It's raining or drizzling.");
+  } else {
+    Serial.println("It's not raining or drizzling.");
+  }
+
+  return raining;
+}
+
 void updateLCD() {
+  bool anyValveOn = false;
+
   for (int i = 0; i < 4; i++) {
     if (valveOn[i]) {
-      lcd.setCursor(0, 0);
-      lcd.print("Zone " + String(i + 1) + " - Runtime:");
-      unsigned long elapsedTime = (millis() - valveStartTime[i]) / 1000;
-      lcd.print(elapsedTime / 60);
-      lcd.print("m ");
-      lcd.print(elapsedTime % 60);
-      lcd.print("s ");
-      lcd.setCursor(0, 1);
-      lcd.print("Duration: ");
-      lcd.print(duration[i]);
-      lcd.print("m ");
+      anyValveOn = true;
+      updateLCDForZone(i);
+      break;
     }
   }
-}
-
-void checkWateringSchedule(int zone, unsigned long elapsedTime) {
-  loadSchedule();
-  timeClient.update();
-  int currentDay = timeClient.getDay();
-  int currentHour = timeClient.getHours();
-  int currentMin = timeClient.getMinutes();
-
-  if (shouldWater(zone, currentDay, currentHour, currentMin, startHour[zone], startMin[zone])) {
-    if (!valveOn[zone]) {
-      if (weatherCheck() && !weatherCheckRequired) {
-        Serial.println("It's raining. Valve will not be turned on.");
-        weatherCheckRequired = true;
-      } else {
-        turnOnValve(zone);
-        valveOn[zone] = true;
-      }
-    }
-  } else if (enableStartTime[zone] && shouldWater(zone, currentDay, currentHour, currentMin, startHour[zone + 2], startMin[zone + 2])) {
-    if (!valveOn[zone]) {
-      if (weatherCheck() && !weatherCheckRequired) {
-        Serial.println("It's raining. Valve will not be turned on.");
-        weatherCheckRequired = true;
-      } else {
-        turnOnValve(zone);
-        valveOn[zone] = true;
-      }
-    }
-  }
-
-  if (valveOn[zone] && hasValveReachedDuration(zone, elapsedTime)) {
-    turnOffValve(zone);
-    valveOn[zone] = false;
-    weatherCheckRequired = false;
-  }
-}
-
-bool hasValveReachedDuration(int zone, unsigned long elapsedTime) {
-  unsigned long totalDuration = valveStartTime[zone] + (duration[zone] * 60 * 1000);
-  return valveOn[zone] && (millis() >= totalDuration);
-}
-
-bool shouldWater(int zone, int currentDay, int currentHour, int currentMin, int targetHour, int targetMin) {
-  if (days[zone][currentDay]) {
-    if (currentHour == targetHour && currentMin == targetMin) {
-      return true;
-    }
-  }
-  return false;
 }
 
 void displayRainMessage() {
@@ -230,7 +228,72 @@ void displayRainMessage() {
   lcd.print("Raining");
   delay(60000);
   lcd.clear();
-  loop();
+}
+
+void updateLCDForZone(int zone) {
+  lcd.setCursor(0, 0);
+  lcd.print("Zone " + String(zone + 1) + " - Runtime:");
+  unsigned long elapsedTime = (millis() - valveStartTime[zone]) / 1000;
+  lcd.print(elapsedTime / 60);
+  lcd.print("m ");
+  lcd.print(elapsedTime % 60);
+  lcd.print("s ");
+  lcd.setCursor(0, 1);
+  lcd.print("Duration: ");
+  lcd.print(duration[zone]);
+  lcd.print("m");
+}
+
+void checkWateringSchedule(int zone, int dstAdjustment) {
+  loadSchedule();
+  timeClient.update();
+  int currentDay = timeClient.getDay();
+  int currentHour = timeClient.getHours();
+  int currentMin = timeClient.getMinutes();
+
+  int currentHourWithDST = currentHour + dstAdjustment;
+  if (currentHourWithDST >= 24) {
+    currentHourWithDST -= 24;
+  }
+
+  if (shouldWater(zone, currentDay, currentHourWithDST, currentMin)) {
+    if (!valveOn[zone]) {
+      if (!weatherCheckRequired) {
+        weatherCheckRequired = true;
+      } else {
+        bool raining = checkForRain();
+        if (raining) {
+          Serial.println("It's raining. Valve will not be turned on.");
+          displayRainMessage();
+          return;
+        }
+      }
+
+      turnOnValve(zone);
+      valveOn[zone] = true;
+    }
+  } else {
+    if (valveOn[zone] && hasValveReachedDuration(zone)) {
+      turnOffValve(zone);
+      valveOn[zone] = false;
+      weatherCheckRequired = false;
+    }
+  }
+}
+
+bool hasValveReachedDuration(int zone) {
+  unsigned long elapsedTime = (millis() - valveStartTime[zone]) / 1000;
+  unsigned long totalDuration = duration[zone] * 60;
+  return valveOn[zone] && (elapsedTime >= totalDuration);
+}
+
+bool shouldWater(int zone, int currentDay, int currentHour, int currentMin) {
+  if (days[zone][currentDay]) {
+    if (currentHour == startHour[zone] && currentMin == startMin[zone]) {
+      return true;
+    }
+  }
+  return false;
 }
 
 bool isTankLevelLow() {
@@ -257,7 +320,7 @@ void turnOnValve(int zone) {
     Serial.println("Using water tank solenoid (slave)");
   }
 
-  if (!weatherCheck()) { // Check weather only when turning on the solenoid
+  if (!checkForRain()) { // Check weather only when turning on the solenoid
     digitalWrite(valvePins[zone], HIGH);
     Serial.println("Valve " + String(zone + 1) + " On");
     Serial.print("Duration: ");
@@ -272,7 +335,6 @@ void turnOnValve(int zone) {
   }
 }
 
-// Function to turn on a specific valve manually
 void turnOnValveMan(int zone) {
   digitalWrite(valvePins[zone], HIGH);
 
@@ -297,10 +359,27 @@ void turnOffValve(int zone) {
   lcd.clear();
   server.sendHeader("Location", "/", true);
   server.send(302, "text/plain", "");
+   
+   // Fetch weather data
+  String weatherData = getWeatherData();
+
+  // Deserialize weather data
+  DynamicJsonDocument jsonResponse(1024); // Adjust the size as needed
+  deserializeJson(jsonResponse, weatherData);
+
+  // Extract weather information
+  String condition = jsonResponse["weather"][0]["main"].as<String>(); // Extract condition
+  float temperature = jsonResponse["main"]["temp"].as<float>(); // Extract temperature
+
+  // Display weather information on LCD
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Cond: " + condition);
+  lcd.setCursor(0, 1);
+  lcd.print("Temp: " + String(temperature) + "C");
   loop();
 }
 
-// Function to turn off a specific valve manually
 void turnOffValveMan(int zone) {
   digitalWrite(valvePins[zone], LOW);
   Serial.println("Valve " + String(zone + 1) + " Off");
@@ -308,14 +387,14 @@ void turnOffValveMan(int zone) {
   server.send(200, "text/plain", "Valve " + String(zone + 1) + " turned off");
 }
 
-// Function to turn off all valves
 void turnOffAllValves() {
-  for (int i = 0; i < numZones; ++i) {
-    digitalWrite(valvePins[i], LOW);
+  for (int i = 0; i < 4; i++) {
+    if (valveOn[i]) {
+      turnOffValve(i);
+    }
   }
 }
 
-// Function to get the day name based on the day index
 String getDayName(int dayIndex) {
   const char* daysOfWeek[] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
   if (dayIndex >= 0 && dayIndex < 7) {
@@ -324,117 +403,60 @@ String getDayName(int dayIndex) {
   return "Invalid Day";
 }
 
-WiFiClient client;
-
-String makeApiRequest(String endpoint) {
- Serial.println("Making API request...");
- if (client.connect("api.openweathermap.org", 80)) {
-    client.print("GET " + endpoint + "\r\n");
-    client.print("Host: api.openweathermap.org\r\n");
-    client.print("Connection: close\r\n\r\n");
-    client.flush();
-
-    String response = "";
-    unsigned long timeout = millis() + 5000;  // Set a timeout of 10 seconds
-
-    while (millis() < timeout) {
-      if (client.available()) {
-        char c = client.read();
-        response += c;
-        timeout = millis() + 5000;  // Reset the timeout on receiving data
-      }
-      delay(10);  // Small delay to prevent flooding the API
-    }
-
-    client.stop();
-
- if (response.length() > 0) {
-  return response;
- } else { 
-  Serial.println("No response from the API");
-  // Handle the case when there's no response from the API
-  }
-  } else {
-    Serial.println("Failed to connect to OpenWeatherMap API");
-  }
-
-  return "N/A";
- }
-
-String extractData(String response, String key) {
-  int keyIndex = response.indexOf("\"" + key + "\":") + key.length() + 3;
-  int endIndex = min(response.indexOf(',', keyIndex), response.indexOf('}', keyIndex));
-  return response.substring(keyIndex, endIndex);
-}
-
 String getWeatherData() {
-  unsigned long startTime = millis();
-  String response;
+  loadConfig();
+  HTTPClient http;
+   // Create the URL for the OpenWeather API request
+  String url = "http://api.openweathermap.org/data/2.5/weather?id=" + city + "&appid=" + apiKey + "&units=metric";
+ 
+  // Send the GET request to the OpenWeather API
+  http.begin(client, url); // Pass the WiFiClient object by reference
+  int httpResponseCode = http.GET();
 
-  while (millis() - startTime < 10000) { // Retry for up to 10 seconds
-    delay(1000); // Optional delay to prevent flooding the API with requests
-    String endpoint = "/data/2.5/weather?q=" + city + "&appid=" + apiKey + "&units=metric";
-    response = makeApiRequest(endpoint);
+  String payload = "{}"; // Default empty JSON string
 
-    if (response != "N/A") {
-      return response;
-    }
-  }
-
-  return "N/A"; // Return error message
-}
-
-bool weatherCheck() {
-  Serial.println("Checking Rain..");
-  WiFiClient client;
-
-  if (client.connect("api.openweathermap.org", 80)) {
-    String request = "GET /data/2.5/weather?q=" + city + "&appid=" + apiKey + "&units=metric\r\n";
-    request += "Host: api.openweathermap.org\r\n";
-    request += "Connection: close\r\n\r\n";
-
-    client.print(request);
-    client.flush();
-
-    DynamicJsonDocument jsonBuffer(1024); // Create a JSON buffer to store the API response
-    DeserializationError error = deserializeJson(jsonBuffer, client);
-
-    if (error) {
-      Serial.println("Failed to parse JSON");
-      client.stop();
-      return false; // Unable to parse JSON, consider it as no rain
-    }
-
-    const char* weatherCondition = jsonBuffer["weather"][0]["main"];
-    Serial.print("Weather Condition: ");
-    Serial.println(weatherCondition);
-
-    // Check if the weather condition indicates rain or drizzle
-    bool isRain = (strcmp(weatherCondition, "Rain") == 0 || strcmp(weatherCondition, "Drizzle") == 0);
-
-    client.stop();
-    return isRain;
+  if (httpResponseCode > 0) {
+    // Read the JSON response
+    payload = http.getString();
   } else {
-    Serial.println("Failed to connect to OpenWeatherMap API");
-    return false; // Connection to OpenWeatherMap failed
+    Serial.print("Error code: ");
+    Serial.println(httpResponseCode);
+    Serial.println(payload);
   }
+
+  http.end(); // Close the connection
+
+  return payload;
 }
 
 void handleRoot() {
-  String temperature, humidity, windSpeed, condition;
-
-  // Retrieve all weather data in a single API call
-  String weatherData = getWeatherData();
-
   // Extract temperature, humidity, wind speed, and condition from the response
   timeClient.update();
   String currentTime = timeClient.getFormattedTime();
-  
-  temperature = extractData(weatherData, "temp");
-  humidity = extractData(weatherData, "humidity");
-  windSpeed = extractData(weatherData, "speed");
-  condition = extractData(weatherData, "main");
 
+ // Extract weather data
+  String weatherData = getWeatherData();
+  DynamicJsonDocument jsonResponse(1024); // Adjust the size as needed
+  deserializeJson(jsonResponse, weatherData); // Convert String to char*
+
+  // Extract temperature, humidity, wind speed, and condition from the JSON response
+  float temperature = jsonResponse["main"]["temp"];
+  float humidity = jsonResponse["main"]["humidity"];
+  float windSpeed = jsonResponse["wind"]["speed"];
+  String condition = jsonResponse["weather"][0]["main"];
+
+
+ if (WiFi.status() == WL_CONNECTED) {
+    // Display weather information on LCD
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Cond: " + condition); // Update to display condition
+    lcd.setCursor(0, 1);
+    lcd.print("Temp: " + String(temperature) + "C");  } else {
+    // Display connection failure on LCD
+    lcd.clear();
+    lcd.print("WiFi failed");
+  }
 
   String html = "<!DOCTYPE html><html><head><title>Smart Irrigation System</title>";
   html += "<style>";
@@ -456,13 +478,14 @@ void handleRoot() {
   html += "<body>";
   html += "<header><h1>Smart Irrigation System</h1></header>";
   html += "<div class='container'>";
- // html += "<p>" + tankLevelPin + "</p>";
   html += "<p id='clock' style='text-align: center;'>Current Time: " + currentTime + "</p>";
-  html += "<p style='text-align: center;'>Temperature: " + temperature + " &#8451;</p>";
   html += "<p style='text-align: center;'>Condition: " + condition + "</p>";
-  html += "<p style='text-align: center;'>Humidity: " + humidity + " %</p>";
-  html += "<p style='text-align: center;'>Wind Speed: " + windSpeed + " m/s</p>";
+  html += "<p style='text-align: center;'>Temperature: " + String(temperature) + " &#8451;</p>";
+  html += "<p style='text-align: center;'>Humidity: " + String(humidity) + " %</p>";
+  html += "<p style='text-align: center;'>Wind Speed: " + String(windSpeed) + " m/s</p>";
 
+
+  
   // JavaScript to update the clock every second
   html += "<script>";
   html += "function updateClock() {";
@@ -553,8 +576,10 @@ void handleRoot() {
   // Submit button
   html += "<button type='submit'>Update Schedule</button></form>";
 
-  html += "</div></body></html>";
+  // Add a link/button to access the setup page
+  html += "<p>Click <a href='/setup'>here</a> to configure API key, and city.</p>";
 
+  // Send the HTML response
   server.send(200, "text/html", html);
 }
 
@@ -571,9 +596,38 @@ void handleSubmit() {
     enableStartTime[zone] = server.arg("enableStartTime" + String(zone)) == "on";
   }
 
+  // Check if API key and city parameters are not empty
+  if (server.hasArg("apiKey") && server.hasArg("city")) {
+    String apiKey = server.arg("apiKey");
+    String city = server.arg("city");
+    String dstAdjustmentStr = String(dstAdjustment);
+    
+    // Save configuration to LittleFS
+   saveConfig(apiKey.c_str(), city.c_str(), dstAdjustmentStr.toInt());
+  }
+
   saveSchedule(); // Save the schedule to EEPROM
   server.sendHeader("Location", "/", true);
   server.send(302, "text/plain", "");
+}
+
+void handleSetupPage() {
+  // HTML content for setup page
+  String html = "<!DOCTYPE html><html><head><title>Setup</title></head><body>";
+  html += "<h1>Setup Page</h1>";
+  html += "<form action='/configure' method='POST'>";
+  html += "<label for='apiKey'>API Key:</label><br>";
+  html += "<input type='text' id='apiKey' name='apiKey'><br>";
+  html += "<label for='city'>City:</label><br>";
+  html += "<input type='text' id='city' name='city'><br>"; 
+  html += "<label for='dstOffset'>Time Zone Offset (hours):</label><br>";
+  html += "<input type='number' id='dstOffset' name='dstOffset' min='-12' max='14'><br><br>";
+  html += "<input type='submit' value='Submit'>";
+  html += "</form>";
+  html += "</body></html>";
+
+  // Send HTML response
+  server.send(200, "text/html", html);
 }
 
 void handleWifi() {
@@ -616,27 +670,38 @@ void startAPMode() {
 }
 
 void handleConnect() {
-  String newSsid = server.arg("ssid");
-  String newPassword = server.arg("password");
-
-  WiFiManager wifiManager;
-  wifiManager.setConfigPortalTimeout(120); // Set configuration portal timeout to 2 minutes
-
-  // Disconnect from any previous connections
-  WiFi.disconnect();
-  delay(1000);
-
-  // Use the autoConnect method of WiFiManager to connect to the new network
-  if (wifiManager.autoConnect(newSsid.c_str(), newPassword.c_str())) {
+  wifiManager.setDebugOutput(false);
+  wifiManager.autoConnect("ESPIrrigationAP");
+  newSsid = WiFi.SSID();
+  newPassword = WiFi.psk();
+  Serial.print("Connecting to WiFi...");
+  if (WiFi.begin(newSsid.c_str(), newPassword.c_str()) == WL_CONNECTED) {
     Serial.println("WiFi connected");
     Serial.print("IP address: ");
     Serial.println(WiFi.localIP());
-    wifiConnected = true;
-    server.sendHeader("Location", "/", true);
-    server.send(302, "text/plain", "");
+    Serial.print("SSID: ");
+    Serial.println(WiFi.SSID());
+    Serial.print("Signal strength (RSSI): ");
+    Serial.println(WiFi.RSSI());
+    // Display connection status and details on LCD
+    lcd.setCursor(0, 0);
+    lcd.print("WiFi connected");
+    lcd.setCursor(0, 1);
+    lcd.print("IP:");
+    lcd.print(WiFi.localIP());
+    lcd.setCursor(0, 2);
+    lcd.print("SSID:");
+    lcd.print(WiFi.SSID());
+    lcd.setCursor(0, 3);
+    lcd.print("RSSI:");
+    lcd.print(WiFi.RSSI());
   } else {
-    Serial.println("Failed to connect to new WiFi. Starting AP Mode...");
-    startAPMode();
+    Serial.println("Failed to connect to WiFi");
+    // Display connection failure on LCD
+    lcd.setCursor(0, 0);
+    lcd.print("WiFi connection");
+    lcd.setCursor(0, 1);
+    lcd.print("failed");
   }
 }
 
@@ -664,8 +729,7 @@ void saveSchedule() {
   file.print('\n');
 
   file.close();
-  }
-
+}
 
 void loadSchedule() {
    File file = LittleFS.open("/schedule.txt", "r");
@@ -691,5 +755,61 @@ void loadSchedule() {
   file.read(); // Read '\n'
 
   file.close();
- }
+}
+
+void saveConfig(const char* apiKey, const char* city, int dstAdjustment) {
+  File configFile = LittleFS.open("/config.txt", "w");
+  if (!configFile) {
+    Serial.println("Failed to open config file for writing");
+    return;
+  }
+
+  // Write configuration to file
+  configFile.println(apiKey);
+  configFile.println(city);
+  configFile.println(dstAdjustment); // Save DST offset
+  configFile.close();
+
+  Serial.println("Configuration saved");
+}
+
+void loadConfig() {
+    File configFile = LittleFS.open("/config.txt", "r");
+    if (!configFile) {
+        Serial.println("Failed to open config file for reading");
+        return;
+    }
+
+    // Read configuration from file and update global variables
+    apiKey = configFile.readStringUntil('\n');
+    apiKey.trim(); // Remove leading and trailing whitespaces
+
+    city = configFile.readStringUntil('\n');
+    city.trim(); // Remove leading and trailing whitespaces
+
+    dstAdjustment = configFile.readStringUntil('\n').toInt(); // Read and assign DST offset
+    // Close file
+    configFile.close();
+
+    Serial.println("Configuration loaded");
+    Serial.print("API Key: ");
+    Serial.println(apiKey);
+    Serial.print("City: ");
+    Serial.println(city);
+    Serial.print("DST Adjustment: ");
+    Serial.println(dstAdjustment);
+}
+
+void handleConfigure() {
+    // Handle configuration form submission
+    apiKey = server.arg("apiKey");
+    city = server.arg("city");
+    dstAdjustment = server.arg("dstOffset").toInt(); // Read time zone offset
+
+    int dstAdjustmentValue = dstAdjustment.toInt();
+    saveConfig(apiKey.c_str(), city.c_str(), dstAdjustmentValue);
+    // Redirect to the setup page
+    server.sendHeader("Location", "/", true);
+    server.send(302, "text/plain", "");
+}
 
