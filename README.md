@@ -7,7 +7,7 @@
 3.At the bottom of the WEB User Interface Add these details:
 
 CityID Number, eg. : "2078025"  
-DST offset eg. : "-1" for daylight savings, 
+DST offset eg. : "-1" for daylight savings 
 API KEY eg : "345e1asdfdeaabdc5adgs918a9cfsuaa" 
 
 This can be obtained from [](https://openweathermap.org/api)
@@ -30,7 +30,11 @@ Wiring Diagram
 Default pin configs
 --------------------
 valvePins[4] = {D0, D3, D5, D6}; // Pins for 4 solenoids
+
 ledPin = D4; // Onboard LED pin
+
 mainsSolenoidPin = D7; // Mains solenoid pin
+
 tankSolenoidPin = D8; // Water tank solenoid pin
+
 tankLevelPin = A0; // Analog pin for tank level sensor (Untested)
