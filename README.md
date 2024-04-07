@@ -8,11 +8,11 @@ Values are stored in LittleFS and will remain if there is reset or power loss.
 
 SETUP:
 
-1.  Connect to ESPIrrigationAP Enter Your Wifi Details VIA IP:192.168.4.1 
+1. Connect to ESPIrrigationAP Enter Your Wifi Details VIA IP:192.168.4.1 
 
-2.  Use a browser to go to the IP ADDRESS displayed when powering up.
+2. Use a browser to go to the IP ADDRESS displayed when powering up.
 
-3.  At the bottom of the WEB User Interface Add these details:
+3. At the bottom of the WEB User Interface Add these details:
 
 CityID Number, eg. : "2078025"  
 
