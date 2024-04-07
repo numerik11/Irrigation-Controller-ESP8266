@@ -8,7 +8,7 @@ Values are stored in LittleFS and will remain if there is reset or power loss.
 
 SETUP:
 
-1.Use a browser to Enter Your Wifi Details VIA IP:192.168.4.1 
+1.Connect to ESPIrrigationAP Enter Your Wifi Details VIA IP:192.168.4.1 
 
 2.Use a browser to go to the IP ADDRESS displayed when powering up.
 
