@@ -4,9 +4,8 @@ The controller can be set up with a watering schedule, it can check the local we
 to determine if it should turn on or not. It also includes features i2c 16x2 LCD screen to display weather, 
 runtime duration, rain staus and Local IP. Access WEB UI In the address bar of the web browser,
 type in Local IP address displayed on the LCD on start up.
+Add a 1N4007 or diode between + and - terminals on the solenoids to prevent flyback voltage that will crash the esp8266.
 Values are stored in LittleFS and will remain if there is reset or power loss. 
-
-SETUP:
 
 1. Connect to ESPIrrigationAP Enter Your Wifi Details VIA IP:192.168.4.1 
 
