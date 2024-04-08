@@ -22,10 +22,11 @@ API KEY eg : "345e1asdfdeaabdc5adgs918a9cfsuaa"
 
 APIKEY can be obtained for free at: (https://openweathermap.org/api)
 
-
+Web UI
 ![screenie11](https://github.com/numerik11/Irrigation-Controller-ESP8266/assets/72150418/f0270493-859e-4a70-adb9-4d15c969f6cb)
 
-Web UI
+Wiring Diagram
+![wiring diag](https://github.com/numerik11/Irrigation-Controller-ESP8266/assets/72150418/a2d8064e-24ea-45d9-9671-c0839f61f9ef)
 
 ![irrigation wiring](https://github.com/numerik11/Irrigation-Controller-ESP8266/assets/72150418/36ed754a-8750-4896-b58e-b252a472d5aa)
 
