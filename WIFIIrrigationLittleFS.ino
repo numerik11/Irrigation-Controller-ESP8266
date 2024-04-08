@@ -87,9 +87,9 @@ void setup() {
   delay(2000);
   lcd.clear();
   lcd.setCursor(0, 0);
-  lcd.print("AP Mode");
+  lcd.print("ESPIrrigation");
   lcd.setCursor(0, 1);
-  lcd.print("IP:192.168.4.1");
+  lcd.print("IP: 192.168.4.1");
   
   // Begin LittleFS
   if (!LittleFS.begin()) {
@@ -111,30 +111,38 @@ void setup() {
   Serial.print("Signal strength (RSSI): ");
   Serial.println(WiFi.RSSI());
   // Display connection status and details on LCD
+   
+  lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print(WiFi.SSID());
   lcd.setCursor(0, 1);
   lcd.print(WiFi.localIP());
-  delay(5000);
- 
+  delay(10000); 
 
-   // Fetch weather data
+  // Fetch weather data
   String weatherData = getWeatherData();
 
   // Deserialize weather data
   DynamicJsonDocument jsonResponse(1024); // Adjust the size as needed
   deserializeJson(jsonResponse, weatherData);
 
-  // Extract weather information
-  String condition = jsonResponse["weather"][0]["main"].as<String>(); // Extract condition
-  float temperature = jsonResponse["main"]["temp"].as<float>(); // Extract temperature
+  // Extract temperature, humidity, wind speed, and weather condition
+  float temperature = jsonResponse["main"]["temp"].as<float>();
+  int humidity = jsonResponse["main"]["humidity"].as<int>();
+  String weatherCondition = jsonResponse["weather"][0]["main"].as<String>();
 
   // Display weather information on LCD
   lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("Cond: " + condition);
+
+  lcd.setCursor(5, 0); // Adjust the position as needed
+  lcd.print(weatherCondition.substring(0, 10)); // Display a substring of the condition to fit within 16 chars
+
   lcd.setCursor(0, 1);
-  lcd.print("Temp: " + String(temperature) + "C");
+  lcd.print("T: ");
+  lcd.print(temperature);
+  lcd.print("C H: ");
+  lcd.print(humidity); // Depending on the range of humidity, you may need to abbreviate or omit parts
+  lcd.print("%");
 
   // Set up NTP client
   timeClient.begin();
@@ -230,18 +238,32 @@ void displayRainMessage() {
   lcd.clear();
 }
 
-void updateLCDForZone(int zone) {
+void updateLCDForZone(int zone) {  
   lcd.setCursor(0, 0);
-  lcd.print("Zone " + String(zone + 1) + " - Runtime:");
+  lcd.print("Zone ");
+  lcd.print(zone + 1); // Increment zone by 1 to match human-readable numbering
+  lcd.print(" - ");
+  
   unsigned long elapsedTime = (millis() - valveStartTime[zone]) / 1000;
-  lcd.print(elapsedTime / 60);
+  lcd.print("Run:");
+  lcd.print(elapsedTime / 60); // Display minutes
   lcd.print("m ");
-  lcd.print(elapsedTime % 60);
-  lcd.print("s ");
+  lcd.print(elapsedTime % 60); // Display seconds
+
+  // Calculate and print the remaining time if there's enough space
   lcd.setCursor(0, 1);
-  lcd.print("Duration: ");
-  lcd.print(duration[zone]);
-  lcd.print("m");
+  lcd.print("Remaining: ");
+  if (elapsedTime < duration[zone] * 60) {
+    unsigned long remainingTime = duration[zone] * 60 - elapsedTime; // Calculate remaining time in seconds
+    lcd.print(remainingTime / 60); // Display remaining minutes
+    lcd.print("m ");
+    lcd.print(remainingTime % 60); // Display remaining seconds
+    lcd.print("s");
+  } else {
+    lcd.clear();
+    lcd.print("Complete");
+    delay(2000);
+  }
 }
 
 void checkWateringSchedule(int zone, int dstAdjustment) {
@@ -360,23 +382,30 @@ void turnOffValve(int zone) {
   server.sendHeader("Location", "/", true);
   server.send(302, "text/plain", "");
    
-   // Fetch weather data
+  // Fetch weather data
   String weatherData = getWeatherData();
 
   // Deserialize weather data
   DynamicJsonDocument jsonResponse(1024); // Adjust the size as needed
   deserializeJson(jsonResponse, weatherData);
 
-  // Extract weather information
-  String condition = jsonResponse["weather"][0]["main"].as<String>(); // Extract condition
-  float temperature = jsonResponse["main"]["temp"].as<float>(); // Extract temperature
+  // Extract temperature, humidity, wind speed, and weather condition
+  float temperature = jsonResponse["main"]["temp"].as<float>();
+  int humidity = jsonResponse["main"]["humidity"].as<int>();
+  String weatherCondition = jsonResponse["weather"][0]["main"].as<String>();
 
   // Display weather information on LCD
   lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("Cond: " + condition);
+
+  lcd.setCursor(5, 0); // Adjust the position as needed
+  lcd.print(weatherCondition.substring(0, 10)); // Display a substring of the condition to fit within 16 chars
+
   lcd.setCursor(0, 1);
-  lcd.print("Temp: " + String(temperature) + "C");
+  lcd.print("T: ");
+  lcd.print(temperature);
+  lcd.print("C H: ");
+  lcd.print(humidity); // Depending on the range of humidity, you may need to abbreviate or omit parts
+  lcd.print("%");
   loop();
 }
 
@@ -577,7 +606,7 @@ void handleRoot() {
   html += "<button type='submit'>Update Schedule</button></form>";
 
   // Add a link/button to access the setup page
-  html += "<p>Click <a href='/setup'>here</a> to configure API key, and city.</p>";
+  html += "<p>Click <a href='/setup'>here</a> to enter API key, City and Daylight savings offset .</p>";
 
   // Send the HTML response
   server.send(200, "text/html", html);
@@ -628,45 +657,6 @@ void handleSetupPage() {
 
   // Send HTML response
   server.send(200, "text/html", html);
-}
-
-void handleWifi() {
-  WiFiManager wifiManager;
-  wifiManager.setTimeout(180); // Set configuration portal timeout to 3 minutes
-
-  if (!wifiManager.autoConnect("ESPIrrigationAP")) {
-    // Failed to connect or configure, restart the ESP
-    ESP.restart();
-  }
-
-  if (WiFi.status() == WL_CONNECTED) {
-    // WiFi connected
-    Serial.println("WiFi connected");
-    Serial.print("IP address: ");
-    Serial.println(WiFi.localIP());
-  } else {
-    Serial.println("Failed to connect to Wi-Fi. Restarting...");
-    ESP.restart();
-  }
-}
-  
-void startAPMode() {
-  Serial.println("Failed to connect to Wi-Fi. Starting AP mode.");
-  WiFiManager wifiManager;
-  wifiManager.autoConnect("ESPIrrigationAP");
-
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("WiFi connected");
-    Serial.print("IP address: ");
-    Serial.println(WiFi.localIP());
-  } else {
-    Serial.println("Still not connected to Wi-Fi. Retrying...");
-    digitalWrite(ledPin, LOW);
-    delay(1000);
-    digitalWrite(ledPin, HIGH);
-    delay(4000); // Wait for 4 seconds before retrying
-    ESP.restart(); // Retry AP mode
-  }
 }
 
 void handleConnect() {
@@ -812,4 +802,3 @@ void handleConfigure() {
     server.sendHeader("Location", "/", true);
     server.send(302, "text/plain", "");
 }
-
