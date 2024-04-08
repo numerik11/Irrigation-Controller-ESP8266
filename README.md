@@ -26,7 +26,8 @@ Web UI
 ![screenie11](https://github.com/numerik11/Irrigation-Controller-ESP8266/assets/72150418/f0270493-859e-4a70-adb9-4d15c969f6cb)
 
 Wiring Diagram
-![wiring diag](https://github.com/numerik11/Irrigation-Controller-ESP8266/assets/72150418/102d0f65-2248-4edb-8f6b-9a28003a1bcd)
+![wiring diag](https://github.com/numerik11/Irrigation-Controller-ESP8266/assets/72150418/e8b8f33b-ee8f-476f-b984-d1b4457ea578)
+
 
 ![irrigation wiring](https://github.com/numerik11/Irrigation-Controller-ESP8266/assets/72150418/36ed754a-8750-4896-b58e-b252a472d5aa)
 
