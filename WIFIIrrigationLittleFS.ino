@@ -82,7 +82,7 @@ void setup() {
   lcd.backlight();
   lcd.setCursor(0, 0);
   lcd.print("Smart Irrigation");
-  lcd.setCursor(4, 1);
+  lcd.setCursor(5, 1);
   lcd.print("System");
   delay(2000);
   lcd.clear();
@@ -134,13 +134,20 @@ void setup() {
   // Display weather information on LCD
   lcd.clear();
 
-  lcd.setCursor(5, 0); // Adjust the position as needed
-  lcd.print(weatherCondition.substring(0, 10)); // Display a substring of the condition to fit within 16 chars
+  // Determine the starting position for centering the text
+  int textLength = weatherCondition.substring(0, 10).length();
+  int startPos = (textLength < 16) ? (16 - textLength) / 2 : 0;
+
+  // Set the cursor position
+  lcd.setCursor(startPos, 0);
+
+  // Print the weather condition
+  lcd.print(weatherCondition.substring(0, 10));
 
   lcd.setCursor(0, 1);
-  lcd.print("T: ");
+  lcd.print("Te:");
   lcd.print(temperature);
-  lcd.print("C H: ");
+  lcd.print("C Hu:");
   lcd.print(humidity); // Depending on the range of humidity, you may need to abbreviate or omit parts
   lcd.print("%");
 
@@ -397,13 +404,20 @@ void turnOffValve(int zone) {
   // Display weather information on LCD
   lcd.clear();
 
-  lcd.setCursor(5, 0); // Adjust the position as needed
-  lcd.print(weatherCondition.substring(0, 10)); // Display a substring of the condition to fit within 16 chars
+  // Determine the starting position for centering the text
+  int textLength = weatherCondition.substring(0, 10).length();
+  int startPos = (textLength < 16) ? (16 - textLength) / 2 : 0;
+
+  // Set the cursor position
+  lcd.setCursor(startPos, 0);
+
+  // Print the weather condition
+  lcd.print(weatherCondition.substring(0, 10));
 
   lcd.setCursor(0, 1);
-  lcd.print("T: ");
+  lcd.print("Te:");
   lcd.print(temperature);
-  lcd.print("C H: ");
+  lcd.print("C Hu:");
   lcd.print(humidity); // Depending on the range of humidity, you may need to abbreviate or omit parts
   lcd.print("%");
   loop();
@@ -478,14 +492,23 @@ void handleRoot() {
  if (WiFi.status() == WL_CONNECTED) {
     // Display weather information on LCD
     lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("Cond: " + condition); // Update to display condition
-    lcd.setCursor(0, 1);
-    lcd.print("Temp: " + String(temperature) + "C");  } else {
-    // Display connection failure on LCD
-    lcd.clear();
-    lcd.print("WiFi failed");
-  }
+      // Determine the starting position for centering the text
+  int textLength = condition.substring(0, 10).length();
+  int startPos = (textLength < 16) ? (16 - textLength) / 2 : 0;
+
+  // Set the cursor position
+  lcd.setCursor(startPos, 0);
+
+  // Print the weather condition
+  lcd.print(condition.substring(0, 10));
+
+  lcd.setCursor(0, 1);
+  lcd.print("Te:");
+  lcd.print(temperature);
+  lcd.print("C Hu:");
+  lcd.print(humidity); 
+  lcd.print("%");
+    }
 
   String html = "<!DOCTYPE html><html><head><title>Smart Irrigation System</title>";
   html += "<style>";
@@ -802,3 +825,4 @@ void handleConfigure() {
     server.sendHeader("Location", "/", true);
     server.send(302, "text/plain", "");
 }
+
