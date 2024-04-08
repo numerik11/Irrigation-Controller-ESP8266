@@ -508,7 +508,7 @@ void handleRoot() {
   lcd.print("C Hu:");
   lcd.print(humidity); 
   lcd.print("%");
-    }
+  }
 
   String html = "<!DOCTYPE html><html><head><title>Smart Irrigation System</title>";
   html += "<style>";
@@ -825,4 +825,3 @@ void handleConfigure() {
     server.sendHeader("Location", "/", true);
     server.send(302, "text/plain", "");
 }
-
