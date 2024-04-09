@@ -487,7 +487,7 @@ void handleRoot() {
   float humidity = jsonResponse["main"]["humidity"];
   float windSpeed = jsonResponse["wind"]["speed"];
   String condition = jsonResponse["weather"][0]["main"];
-
+  String city = jsonResponse["name"]; 
 
  if (WiFi.status() == WL_CONNECTED) {
     // Display weather information on LCD
@@ -506,7 +506,7 @@ void handleRoot() {
   lcd.print("Te:");
   lcd.print(temperature);
   lcd.print("C Hu:");
-  lcd.print(humidity); 
+  lcd.print(int(humidity)); 
   lcd.print("%");
   }
 
@@ -531,9 +531,11 @@ void handleRoot() {
   html += "<header><h1>Smart Irrigation System</h1></header>";
   html += "<div class='container'>";
   html += "<p id='clock' style='text-align: center;'>Current Time: " + currentTime + "</p>";
+  html += "<p style='text-align: center;'>Location: " + city + "</p>"; // Include city information
   html += "<p style='text-align: center;'>Condition: " + condition + "</p>";
   html += "<p style='text-align: center;'>Temperature: " + String(temperature) + " &#8451;</p>";
-  html += "<p style='text-align: center;'>Humidity: " + String(humidity) + " %</p>";
+  html += "<p style='text-align: center;'>Humidity: " + String(int(humidity)) + " %</p>";
+
   html += "<p style='text-align: center;'>Wind Speed: " + String(windSpeed) + " m/s</p>";
 
 
