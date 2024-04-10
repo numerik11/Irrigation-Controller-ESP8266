@@ -48,6 +48,9 @@ float temperature; // Declare temperature globally
 float humidity; // Declare humidity globally
 float windSpeed; // Declare windSpeed globally
 float rain; // Declare windSpeed globally
+unsigned long previousMillis = 0;   // Stores the last time the weather was updated
+const long interval = 3600000;   //update lcd weather every hour  
+
 
 // Define the number of zones
 const int numZones = 4; // Adjust as needed
@@ -177,6 +180,15 @@ void setup() {
 void loop() {
   ArduinoOTA.handle();
 
+  unsigned long currentMillis = millis();
+  if (currentMillis - previousMillis >= interval) {
+    // Save the last update time
+    previousMillis = currentMillis;
+
+    // Call the function to update weather on LCD
+    updateWeatherOnLCD();
+  }
+
   for (int i = 0; i < numZones; i++) {
     checkWateringSchedule(i, dstAdjustment.toInt());
   }
@@ -235,6 +247,39 @@ void updateLCD() {
       break;
     }
   }
+}
+
+void updateWeatherOnLCD() {
+  // Fetch weather data
+  String weatherData = getWeatherData();
+
+  // Deserialize weather data
+  DynamicJsonDocument jsonResponse(1024); // Adjust the size as needed
+  deserializeJson(jsonResponse, weatherData);
+
+  // Extract temperature, humidity, wind speed, and weather condition
+  temperature = jsonResponse["main"]["temp"].as<float>();
+  humidity = jsonResponse["main"]["humidity"].as<float>();
+  condition = jsonResponse["weather"][0]["main"].as<String>();
+
+    // Display weather information on LCD
+  lcd.clear();
+      // Determine the starting position for centering the text
+  int textLength = condition.substring(0, 10).length();
+  int startPos = (textLength < 16) ? (16 - textLength) / 2 : 0;
+
+  // Set the cursor position
+  lcd.setCursor(startPos, 0);
+
+  // Print the weather condition
+  lcd.print(condition.substring(0, 10));
+
+  lcd.setCursor(0, 1);
+  lcd.print("Te:");
+  lcd.print(temperature);
+  lcd.print("C Hu:");
+  lcd.print(int(humidity)); 
+  lcd.print("%");
 }
 
 void displayRainMessage() {
