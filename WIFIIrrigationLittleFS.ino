@@ -186,15 +186,7 @@ void loop() {
   // Check if it's time to update the weather data and LCD display
   if (currentMillis - previousMillis >= interval) {
     previousMillis = currentMillis; // Update previousMillis to the current time
-
-    // Fetch new weather data
-    String weatherData = getWeatherData();
-
-    // Update the global weather variables
-    updateWeatherVariables(weatherData);
-
-    // Update the LCD with new weather information
-    updateWeatherOnLCD();
+    updateWeatherOnLCD();    
   }
 
   // Handle watering schedules and other functionalities
@@ -255,14 +247,20 @@ void updateLCD() {
 }
 
 void updateWeatherOnLCD() {
+      // Fetch new weather data
+    String weatherData = getWeatherData();
+
+    // Update the global weather variables
+    updateWeatherVariables(weatherData);
+
   lcd.clear();
   int startPos = (condition.length() < 16) ? (16 - condition.length()) / 2 : 0;
   lcd.setCursor(startPos, 0);
   lcd.print(condition);
   lcd.setCursor(0, 1);
-  lcd.print("Temp: ");
+  lcd.print("Temp:");
   lcd.print(temperature, 1);
-  lcd.print("C Hum: ");
+  lcd.print("C Hum:");
   lcd.print(humidity);
   lcd.print("%");
 }
@@ -281,6 +279,7 @@ void updateWeatherVariables(const String& jsonData) {
   temperature = jsonResponse["main"]["temp"].as<float>();
   humidity = jsonResponse["main"]["humidity"].as<int>();
   condition = jsonResponse["weather"][0]["main"].as<String>();
+  delay(1000);
 }
 
 void displayRainMessage() {
@@ -320,7 +319,7 @@ void updateLCDForZone(int zone) {
 }
 
 void checkWateringSchedule(int zone, int dstAdjustment) {
-  loadSchedule();
+  //loadSchedule();
   timeClient.update();
   int currentDay = timeClient.getDay();
   int currentHour = timeClient.getHours();
@@ -382,7 +381,8 @@ bool isTankLevelLow() {
 }
 
 void turnOnValve(int zone) {
-  delay(500);
+  delay(200);
+  loadConfig();
   valveStartTime[zone] = millis();
 
   if (isTankLevelLow()) {
@@ -493,7 +493,7 @@ String getDayName(int dayIndex) {
 }
 
 String getWeatherData() {
-  loadConfig();
+  //loadConfig();
   HTTPClient http;
    // Create the URL for the OpenWeather API request
   String url = "http://api.openweathermap.org/data/2.5/weather?id=" + city + "&appid=" + apiKey + "&units=metric";
@@ -516,6 +516,7 @@ String getWeatherData() {
   http.end(); // Close the connection
 
   return payload;
+  delay(1000);
 }
 
 void handleRoot() {
@@ -523,7 +524,7 @@ void handleRoot() {
   timeClient.update();
   String currentTime = timeClient.getFormattedTime();
 
- // Extract weather data
+  // Extract weather data
   String weatherData = getWeatherData();
   DynamicJsonDocument jsonResponse(1024); // Adjust the size as needed
   deserializeJson(jsonResponse, weatherData); // Convert String to char*
@@ -538,39 +539,39 @@ void handleRoot() {
  if (WiFi.status() == WL_CONNECTED) {
     // Display weather information on LCD
     lcd.clear();
-      // Determine the starting position for centering the text
-  int textLength = condition.substring(0, 10).length();
-  int startPos = (textLength < 16) ? (16 - textLength) / 2 : 0;
+    // Determine the starting position for centering the text
+    int textLength = condition.substring(0, 10).length();
+    int startPos = (textLength < 16) ? (16 - textLength) / 2 : 0;
 
-  // Set the cursor position
-  lcd.setCursor(startPos, 0);
+    // Set the cursor position
+    lcd.setCursor(startPos, 0);
 
-  // Print the weather condition
-  lcd.print(condition.substring(0, 10));
+    // Print the weather condition
+    lcd.print(condition.substring(0, 10));
 
-  lcd.setCursor(0, 1);
-  lcd.print("Te:");
-  lcd.print(temperature);
-  lcd.print("C Hu:");
-  lcd.print(int(humidity)); 
-  lcd.print("%");
+    lcd.setCursor(0, 1);
+    lcd.print("Te:");
+    lcd.print(temperature);
+    lcd.print("C Hu:");
+    lcd.print(int(humidity)); 
+    lcd.print("%");
   }
 
   String html = "<!DOCTYPE html><html><head><title>Smart Irrigation System</title>";
   html += "<style>";
-  html += "body { font-family: Arial, sans-serif; background-color: #f2f2f2; margin: 0; }";
-  html += "header { background-color: #4CAF50; color: white; padding: 15px; text-align: center; }";
+  html += "body { font-family: Arial, sans-serif; background-color: #e7f0f8; margin: 0; }";
+  html += "header { background-color: #0073e6; color: white; padding: 15px; text-align: center; }";
   html += ".container { max-width: 600px; margin: 20px auto; padding: 20px; background-color: #fff; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); border-radius: 8px; }";
   html += "h1 { text-align: center; }";
   html += "p { margin-bottom: 10px; }";
-  html += ".zone-container { margin-bottom: 20px; padding: 15px; background-color: #f9f9f9; border-radius: 5px; }";
+  html += ".zone-container { margin-bottom: 20px; padding: 15px; background-color: #f0f8ff; border-radius: 5px; }";
   html += ".days-container { display: flex; margin-bottom: 10px; }";
   html += ".checkbox-container { margin-right: 10px; }";
   html += ".time-duration-container { display: flex; align-items: center; }";
   html += ".time-input, .duration-input { margin-right: 20px; }";
   html += ".manual-control-container { margin-top: 10px; }";
   html += ".turn-on-btn, .turn-off-btn { padding: 10px 15px; margin-right: 10px; background-color: #4caf50; color: #fff; border: none; border-radius: 3px; cursor: pointer; }";
-  html += ".turn-off-btn { background-color: #f44336; }";
+  html += ".turn-off-btn { background-color: #0073e6; }";
   html += "button[type='submit'] { background-color: #2196F3; color: white; padding: 10px 15px; border: none; border-radius: 3px; cursor: pointer; }";
   html += "</style></head>";
   html += "<body>";
@@ -581,12 +582,9 @@ void handleRoot() {
   html += "<p style='text-align: center;'>Condition: " + condition + "</p>";
   html += "<p style='text-align: center;'>Temperature: " + String(temperature) + " &#8451;</p>";
   html += "<p style='text-align: center;'>Humidity: " + String(int(humidity)) + " %</p>";
-
   html += "<p style='text-align: center;'>Wind Speed: " + String(windSpeed) + " m/s</p>";
 
-
-  
-  // JavaScript to update the clock every second
+ // JavaScript to update the clock every second
   html += "<script>";
   html += "function updateClock() {";
   html += "var now = new Date();";
