@@ -120,7 +120,7 @@ void setup() {
   lcd.print(WiFi.SSID());
   lcd.setCursor(0, 1);
   lcd.print(WiFi.localIP());
-  delay(10000); 
+  delay(5000); 
 
   // Fetch weather data
   String weatherData = getWeatherData();
@@ -136,22 +136,15 @@ void setup() {
 
   // Display weather information on LCD
   lcd.clear();
-
-  // Determine the starting position for centering the text
   int textLength = weatherCondition.substring(0, 10).length();
   int startPos = (textLength < 16) ? (16 - textLength) / 2 : 0;
-
-  // Set the cursor position
   lcd.setCursor(startPos, 0);
-
-  // Print the weather condition
   lcd.print(weatherCondition.substring(0, 10));
-
   lcd.setCursor(0, 1);
   lcd.print("Te:");
   lcd.print(temperature);
   lcd.print("C Hu:");
-  lcd.print(humidity); // Depending on the range of humidity, you may need to abbreviate or omit parts
+  lcd.print(humidity); 
   lcd.print("%");
 
   // Set up NTP client
@@ -431,7 +424,10 @@ void turnOnValveMan(int zone) {
 void turnOffValve(int zone) {
   digitalWrite(valvePins[zone], LOW);
   lcd.setCursor(0, 0);
-  lcd.print("Valve " + String(zone + 1) + " Off");
+    lcd.setCursor(0, 0);
+    lcd.print("Valve ");
+    lcd.print(zone + 1);
+    lcd.print(" Off");
   valveOn[zone] = false;  
   server.sendHeader("Location", "/", true);
   server.send(302, "text/plain", "");
@@ -472,7 +468,10 @@ void turnOffValve(int zone) {
 void turnOffValveMan(int zone) {
   digitalWrite(valvePins[zone], LOW);
   lcd.clear(); 
-  lcd.println("Valve " + String(zone + 1) + " Off");
+    lcd.setCursor(0, 0);
+    lcd.print("Valve ");
+    lcd.print(zone + 1);
+    lcd.print(" Off");
   server.send(200, "text/plain", "Valve " + String(zone + 1) + " turned off");
   delay(1000);
   updateWeatherOnLCD();
