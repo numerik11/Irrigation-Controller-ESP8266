@@ -258,9 +258,9 @@ void updateWeatherOnLCD() {
   lcd.setCursor(startPos, 0);
   lcd.print(condition);
   lcd.setCursor(0, 1);
-  lcd.print("Temp:");
+  lcd.print("Te:");
   lcd.print(temperature, 1);
-  lcd.print("C Hum:");
+  lcd.print("C Hu:");
   lcd.print(humidity);
   lcd.print("%");
 }
@@ -412,29 +412,32 @@ void turnOnValve(int zone) {
 
 void turnOnValveMan(int zone) {
   digitalWrite(valvePins[zone], HIGH);
-
+  lcd.clear();
   // Print debug information
-  Serial.print("Valve ");
-  Serial.print(zone + 1);
-  Serial.println(" On");
+    lcd.setCursor(0, 0);
+    lcd.print("Valve ");
+    lcd.print(zone + 1);
+    lcd.print(" On");
 
-  Serial.print("Duration: ");
-  Serial.print(duration[zone]);
-  Serial.println(" Mins");
-
-  updateLCD();
-  server.send(200, "text/plain", "Valve " + String(zone + 1) + " turned on");
+    lcd.setCursor(0, 1);
+    lcd.print("Duration: ");
+    lcd.print(duration[zone]);
+    lcd.println(" Mins");
+    updateWeatherOnLCD();
+    server.send(200, "text/plain", "Valve " + String(zone + 1) + " turned on");
+    delay(1000); 
 }
 
 void turnOffValve(int zone) {
   digitalWrite(valvePins[zone], LOW);
-  Serial.println("Valve " + String(zone + 1) + " Off");
-  valveOn[zone] = false;
-  delay(800);
-  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Valve " + String(zone + 1) + " Off");
+  valveOn[zone] = false;  
   server.sendHeader("Location", "/", true);
   server.send(302, "text/plain", "");
-   
+  delay(1000);
+  lcd.clear();
+
   // Fetch weather data
   String weatherData = getWeatherData();
 
@@ -446,9 +449,6 @@ void turnOffValve(int zone) {
   float temperature = jsonResponse["main"]["temp"].as<float>();
   int humidity = jsonResponse["main"]["humidity"].as<int>();
   String weatherCondition = jsonResponse["weather"][0]["main"].as<String>();
-
-  // Display weather information on LCD
-  lcd.clear();
 
   // Determine the starting position for centering the text
   int textLength = weatherCondition.substring(0, 10).length();
@@ -471,9 +471,11 @@ void turnOffValve(int zone) {
 
 void turnOffValveMan(int zone) {
   digitalWrite(valvePins[zone], LOW);
-  Serial.println("Valve " + String(zone + 1) + " Off");
-  updateLCD();
+  lcd.clear(); 
+  lcd.println("Valve " + String(zone + 1) + " Off");
   server.send(200, "text/plain", "Valve " + String(zone + 1) + " turned off");
+  delay(1000);
+  updateWeatherOnLCD();
 }
 
 void turnOffAllValves() {
