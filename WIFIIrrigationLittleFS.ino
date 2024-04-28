@@ -179,30 +179,35 @@ void setup() {
 
 void loop() {
   ArduinoOTA.handle();
+  server.handleClient();
 
   unsigned long currentMillis = millis();
-  if (currentMillis - previousMillis >= interval) {
-    // Save the last update time
-    previousMillis = currentMillis;
 
-    // Call the function to update weather on LCD
+  // Check if it's time to update the weather data and LCD display
+  if (currentMillis - previousMillis >= interval) {
+    previousMillis = currentMillis; // Update previousMillis to the current time
+
+    // Fetch new weather data
+    String weatherData = getWeatherData();
+
+    // Update the global weather variables
+    updateWeatherVariables(weatherData);
+
+    // Update the LCD with new weather information
     updateWeatherOnLCD();
   }
 
+  // Handle watering schedules and other functionalities
   for (int i = 0; i < numZones; i++) {
     checkWateringSchedule(i, dstAdjustment.toInt());
+    updateLCD();
   }
 
-  updateLCD();
-  server.handleClient();
-
-  // Check for rain only when submitting a watering request
-  if (weatherCheckRequired) {
-    if (checkForRain()) {
-      turnOffAllValves();
-      displayRainMessage();
-    }
-    weatherCheckRequired = false; // Reset the flag
+  // Handle rain check
+  if (weatherCheckRequired && checkForRain()) {
+    turnOffAllValves();
+    displayRainMessage();
+    weatherCheckRequired = false; // Reset the flag after handling
   }
 }
 
@@ -250,36 +255,32 @@ void updateLCD() {
 }
 
 void updateWeatherOnLCD() {
-  // Fetch weather data
-  String weatherData = getWeatherData();
-
-  // Deserialize weather data
-  DynamicJsonDocument jsonResponse(1024); // Adjust the size as needed
-  deserializeJson(jsonResponse, weatherData);
-
-  // Extract temperature, humidity, wind speed, and weather condition
-  temperature = jsonResponse["main"]["temp"].as<float>();
-  humidity = jsonResponse["main"]["humidity"].as<float>();
-  condition = jsonResponse["weather"][0]["main"].as<String>();
-
-    // Display weather information on LCD
   lcd.clear();
-      // Determine the starting position for centering the text
-  int textLength = condition.substring(0, 10).length();
-  int startPos = (textLength < 16) ? (16 - textLength) / 2 : 0;
-
-  // Set the cursor position
+  int startPos = (condition.length() < 16) ? (16 - condition.length()) / 2 : 0;
   lcd.setCursor(startPos, 0);
-
-  // Print the weather condition
-  lcd.print(condition.substring(0, 10));
-
+  lcd.print(condition);
   lcd.setCursor(0, 1);
-  lcd.print("Te:");
-  lcd.print(temperature);
-  lcd.print("C Hu:");
-  lcd.print(int(humidity)); 
+  lcd.print("Temp: ");
+  lcd.print(temperature, 1);
+  lcd.print("C Hum: ");
+  lcd.print(humidity);
   lcd.print("%");
+}
+
+void updateWeatherVariables(const String& jsonData) {
+  DynamicJsonDocument jsonResponse(1024);
+  DeserializationError error = deserializeJson(jsonResponse, jsonData);
+
+  if (error) {
+    Serial.print("deserializeJson() failed: ");
+    Serial.println(error.c_str());
+    return;
+  }
+
+  // Assuming the JSON structure is known and consistent
+  temperature = jsonResponse["main"]["temp"].as<float>();
+  humidity = jsonResponse["main"]["humidity"].as<int>();
+  condition = jsonResponse["weather"][0]["main"].as<String>();
 }
 
 void displayRainMessage() {
@@ -711,22 +712,33 @@ void handleSubmit() {
 }
 
 void handleSetupPage() {
-  // HTML content for setup page
-  String html = "<!DOCTYPE html><html><head><title>Setup</title></head><body>";
-  html += "<h1>Setup Page</h1>";
-  html += "<form action='/configure' method='POST'>";
-  html += "<label for='apiKey'>API Key:</label><br>";
-  html += "<input type='text' id='apiKey' name='apiKey'><br>";
-  html += "<label for='city'>City:</label><br>";
-  html += "<input type='text' id='city' name='city'><br>"; 
-  html += "<label for='dstOffset'>Time Zone Offset (hours):</label><br>";
-  html += "<input type='number' id='dstOffset' name='dstOffset' min='-12' max='14'><br><br>";
-  html += "<input type='submit' value='Submit'>";
-  html += "</form>";
-  html += "</body></html>";
+    // Load existing configuration values
+    String existingApiKey = apiKey; // Assume apiKey is a global String variable
+    String existingCity = city;     // Assume city is a global String variable
+    float existingDstOffset = dstAdjustment.toFloat(); // Assume dstAdjustment is a String storing the offset as a float
 
-  // Send HTML response
-  server.send(200, "text/html", html);
+    // HTML content for setup page
+    String html = "<!DOCTYPE html><html><head><title>Setup</title>";
+    html += "<style>";
+    html += "body { font-family: Arial, sans-serif; background-color: #f4f4f9; padding: 20px; }";
+    html += "form { max-width: 300px; margin: auto; padding: 20px; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }";
+    html += "input[type='text'], input[type='number'], input[type='submit'] { width: 100%; padding: 8px; margin: 8px 0; box-sizing: border-box; }";
+    html += "label { margin-top: 20px; }";
+    html += "</style></head><body>";
+    html += "<h1>Setup Page</h1>";
+    html += "<form action='/configure' method='POST'>";
+    html += "<label for='apiKey'>API Key:</label><br>";
+    html += "<input type='text' id='apiKey' name='apiKey' value='" + existingApiKey + "'><br>";
+    html += "<label for='city'>City:</label><br>";
+    html += "<input type='text' id='city' name='city' value='" + existingCity + "'><br>";
+    html += "<label for='dstOffset'>Time Zone Offset (hours):</label><br>";
+    html += "<input type='number' id='dstOffset' name='dstOffset' min='-12' max='14' step='0.01' value='" + String(existingDstOffset, 2) + "'><br><br>";
+    html += "<input type='submit' value='Submit'>";
+    html += "</form>";
+    html += "</body></html>";
+
+    // Send HTML response
+    server.send(200, "text/html", html);
 }
 
 void handleConnect() {
