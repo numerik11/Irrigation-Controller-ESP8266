@@ -12,9 +12,9 @@
 #include <Wire.h>
 #include <LittleFS.h>
 
-// Constants for pins
+
 const int valvePins[4] = {D0, D3, D5, D6}; // Pins for 4 solenoids
-const int ledPin = D4; // Onboard LED pin
+const int ledPin = D4; // LED pin
 const int mainsSolenoidPin = D7; // Mains solenoid pin
 const int tankSolenoidPin = D8; // Water tank solenoid pin
 const int tankLevelPin = A0; // Analog pin for tank level sensor
@@ -37,31 +37,32 @@ String dstAdjustment;
 
 NTPClient timeClient(ntpUDP);
 
-unsigned long valveStartTime[4] = {0}; // Start times for 4 zones
+unsigned long valveStartTime[4] = {0}; 
 unsigned long elapsedTime[4] = {0};
+
 bool valveOn[4] = {false};
 bool raining = false;
 bool weatherCheckRequired = false;
 bool wifiConnected = false;
-String condition; // Declare condition globally
-float temperature; // Declare temperature globally
-float humidity; // Declare humidity globally
-float windSpeed; // Declare windSpeed globally
-float rain; // Declare windSpeed globally
-unsigned long previousMillis = 0;   // Stores the last time the weather was updated
-const long interval = 3600000;   //update lcd weather every hour  
 
+String condition; 
+float temperature; 
+float humidity; 
+float windSpeed; 
+float rain; 
+unsigned long previousMillis = 0;   
+const long interval = 3600000;   
 
-// Define the number of zones
-const int numZones = 4; // Adjust as needed
-
-// Declare arrays for each parameter
+const int numZones = 4; 
 
 int startHour[numZones];
 int startMin[numZones];
+int startHour2[numZones];
+int startMin2[numZones];
 int duration[numZones];
 bool enableStartTime[numZones];
-bool days[4][7] =   {{false, true, false, true, false, true, false}, // Days for each zone
+bool enableStartTime2[numZones];
+bool days[4][7] =     {{false, true, false, true, false, true, false},  
                        {false, true, false, true, false, true, false},
                        {false, true, false, true, false, true, false},
                        {false, true, false, true, false, true, false}};
@@ -99,12 +100,20 @@ void setup() {
     Serial.println("Failed to mount LittleFS");
     return;
   }
+  
+  wifiManager.autoConnect("ESPIrrigationAP");
+  wifiManager.setTimeout(180); // 180 seconds before timeout
+
+  // Try to connect to WiFi network saved in EEPROM
+  if (!wifiManager.autoConnect("ESPIrrigationAP")) {
+    Serial.println("Failed to connect and hit timeout");
+    ESP.restart(); // Restart the ESP if connection fails
+  }
 
   // Load schedule from LittleFS
   loadSchedule();
   loadConfig();
 
-  wifiManager.autoConnect("ESPIrrigationAP");
   // Connected to WiFi
   Serial.println("WiFi connected");
   Serial.print("IP address: ");
@@ -146,10 +155,12 @@ void setup() {
   lcd.print("C Hu:");
   lcd.print(humidity); 
   lcd.print("%");
+  delay(3000); 
+  lcd.noBacklight();
 
   // Set up NTP client
   timeClient.begin();
-  timeClient.setTimeOffset(10.5 * 3600); // Set timezone offset (adjust as needed)
+  timeClient.setTimeOffset(10.5 * 3600); // timezone Set to 10.5 in Web UI
 
   // Set up OTA
   ArduinoOTA.begin();
@@ -193,6 +204,10 @@ void loop() {
     turnOffAllValves();
     displayRainMessage();
     weatherCheckRequired = false; // Reset the flag after handling
+  }
+
+  if (WiFi.status() != WL_CONNECTED) {
+  reconnectWiFi(); // Try to reconnect if the connection is lost
   }
 }
 
@@ -240,21 +255,29 @@ void updateLCD() {
 }
 
 void updateWeatherOnLCD() {
-      // Fetch new weather data
-    String weatherData = getWeatherData();
+    
+  // Fetch weather data
+  String weatherData = getWeatherData();
 
-    // Update the global weather variables
-    updateWeatherVariables(weatherData);
+  // Deserialize weather data
+  DynamicJsonDocument jsonResponse(1024); // Adjust the size as needed
+  deserializeJson(jsonResponse, weatherData);
+
+  // Extract temperature, humidity, wind speed, and weather condition
+  float temperature = jsonResponse["main"]["temp"].as<float>();
+  int humidity = jsonResponse["main"]["humidity"].as<int>();
+  String weatherCondition = jsonResponse["weather"][0]["main"].as<String>();
 
   lcd.clear();
-  int startPos = (condition.length() < 16) ? (16 - condition.length()) / 2 : 0;
+  int textLength = weatherCondition.substring(0, 10).length();
+  int startPos = (textLength < 16) ? (16 - textLength) / 2 : 0;
   lcd.setCursor(startPos, 0);
-  lcd.print(condition);
+  lcd.print(weatherCondition.substring(0, 10));
   lcd.setCursor(0, 1);
   lcd.print("Te:");
-  lcd.print(temperature, 1);
+  lcd.print(temperature);
   lcd.print("C Hu:");
-  lcd.print(humidity);
+  lcd.print(humidity); 
   lcd.print("%");
 }
 
@@ -283,36 +306,40 @@ void displayRainMessage() {
   lcd.clear();
 }
 
-void updateLCDForZone(int zone) {  
-  lcd.setCursor(0, 0);
-  lcd.print("Zone ");
-  lcd.print(zone + 1); // Increment zone by 1 to match human-readable numbering
-  lcd.print(" - ");
-  
-  unsigned long elapsedTime = (millis() - valveStartTime[zone]) / 1000;
-  lcd.print("Run:");
-  lcd.print(elapsedTime / 60); // Display minutes
-  lcd.print("m ");
-  lcd.print(elapsedTime % 60); // Display seconds
+void updateLCDForZone(int zone) {
+  static unsigned long lastUpdate = 0;
+  unsigned long currentTime = millis();
+  if (currentTime - lastUpdate < 1000) { // Update the display every 1000 milliseconds
+    return;
+  }
+  lastUpdate = currentTime;
 
-  // Calculate and print the remaining time if there's enough space
-  lcd.setCursor(0, 1);
-  lcd.print("Remaining: ");
+  unsigned long elapsedTime = (currentTime - valveStartTime[zone]) / 1000;
+  unsigned long remainingTime = (duration[zone] * 60) - elapsedTime;
+
+  String zoneText = "Zone " + String(zone + 1);
+  String elapsedTimeText = String(elapsedTime / 60) + ":" + (elapsedTime % 60 < 10 ? "0" : "") + String(elapsedTime % 60);
+  String displayText = zoneText + " - " + elapsedTimeText;
+
+  lcd.clear();
+  lcd.setCursor((16 - displayText.length()) / 2, 0); // Center the top row text
+  lcd.print(displayText);
+
   if (elapsedTime < duration[zone] * 60) {
-    unsigned long remainingTime = duration[zone] * 60 - elapsedTime; // Calculate remaining time in seconds
-    lcd.print(remainingTime / 60); // Display remaining minutes
-    lcd.print("m ");
-    lcd.print(remainingTime % 60); // Display remaining seconds
-    lcd.print("s");
+    String remainingTimeText = String(remainingTime / 60) + "m Remaining.";
+    lcd.setCursor((16 - remainingTimeText.length()) / 2, 1); // Center the bottom row text
+    lcd.print(remainingTimeText);
   } else {
+    String completeText = "Complete";
     lcd.clear();
-    lcd.print("Complete");
-    delay(2000);
+    lcd.setCursor((16 - completeText.length()) / 2, 0); // Center "Complete" in the middle of the screen
+    lcd.print(completeText);
+    delay(1000); // Delay to show "Complete", consider using non-blocking delay in the future
   }
 }
 
 void checkWateringSchedule(int zone, int dstAdjustment) {
-  //loadSchedule();
+  loadSchedule();
   timeClient.update();
   int currentDay = timeClient.getDay();
   int currentHour = timeClient.getHours();
@@ -352,11 +379,15 @@ bool hasValveReachedDuration(int zone) {
   unsigned long elapsedTime = (millis() - valveStartTime[zone]) / 1000;
   unsigned long totalDuration = duration[zone] * 60;
   return valveOn[zone] && (elapsedTime >= totalDuration);
+  lcd.noBacklight();
 }
 
 bool shouldWater(int zone, int currentDay, int currentHour, int currentMin) {
   if (days[zone][currentDay]) {
-    if (currentHour == startHour[zone] && currentMin == startMin[zone]) {
+    if (enableStartTime[zone] && currentHour == startHour[zone] && currentMin == startMin[zone]) {
+      return true;
+    }
+    if (enableStartTime2[zone] && currentHour == startHour2[zone] && currentMin == startMin2[zone]) {
       return true;
     }
   }
@@ -374,8 +405,8 @@ bool isTankLevelLow() {
 }
 
 void turnOnValve(int zone) {
-  delay(200);
-  loadConfig();
+    lcd.backlight();
+    loadConfig();
   valveStartTime[zone] = millis();
 
   if (isTankLevelLow()) {
@@ -405,26 +436,19 @@ void turnOnValve(int zone) {
 
 void turnOnValveMan(int zone) {
   digitalWrite(valvePins[zone], HIGH);
+  lcd.backlight(); 
   lcd.clear();
   // Print debug information
-    lcd.setCursor(0, 0);
+    lcd.setCursor(3, 0);
     lcd.print("Valve ");
     lcd.print(zone + 1);
     lcd.print(" On");
-
-    lcd.setCursor(0, 1);
-    lcd.print("Duration: ");
-    lcd.print(duration[zone]);
-    lcd.println(" Mins");
-    updateWeatherOnLCD();
-    server.send(200, "text/plain", "Valve " + String(zone + 1) + " turned on");
-    delay(1000); 
+    server.send(200, "text/plain", "Valve " + String(zone + 1) + " turned on");       
 }
 
 void turnOffValve(int zone) {
   digitalWrite(valvePins[zone], LOW);
-  lcd.setCursor(0, 0);
-    lcd.setCursor(0, 0);
+    lcd.setCursor(3, 0);
     lcd.print("Valve ");
     lcd.print(zone + 1);
     lcd.print(" Off");
@@ -462,18 +486,21 @@ void turnOffValve(int zone) {
   lcd.print("C Hu:");
   lcd.print(humidity); // Depending on the range of humidity, you may need to abbreviate or omit parts
   lcd.print("%");
+  delay(2000);
+  lcd.noBacklight();
   loop();
 }
 
 void turnOffValveMan(int zone) {
   digitalWrite(valvePins[zone], LOW);
   lcd.clear(); 
-    lcd.setCursor(0, 0);
-    lcd.print("Valve ");
-    lcd.print(zone + 1);
-    lcd.print(" Off");
+  lcd.setCursor(3, 0);
+  lcd.print("Valve ");
+  lcd.print(zone + 1);
+  lcd.print(" Off");
   server.send(200, "text/plain", "Valve " + String(zone + 1) + " turned off");
-  delay(1000);
+  delay(1200);
+  lcd.noBacklight();
   updateWeatherOnLCD();
 }
 
@@ -481,6 +508,7 @@ void turnOffAllValves() {
   for (int i = 0; i < 4; i++) {
     if (valveOn[i]) {
       turnOffValve(i);
+      lcd.noBacklight();
     }
   }
 }
@@ -524,6 +552,7 @@ void handleRoot() {
   // Extract temperature, humidity, wind speed, and condition from the response
   timeClient.update();
   String currentTime = timeClient.getFormattedTime();
+  loadSchedule();
 
   // Extract weather data
   String weatherData = getWeatherData();
@@ -618,17 +647,35 @@ void handleRoot() {
     }
     html += "</div>";
 
- // Start times and duration
-    html += "<div class='time-duration-container'>";
-    html += "<div class='time-input'>";
-    html += "<label for='startHour" + String(zone) + "'>Start Time:</label>";
-    html += "<input type='number' name='startHour" + String(zone) + "' id='startHour" + String(zone) + "' min='0' max='23' value='" + String(startHour[zone]) + "' required style='width: 30px;'> :";
-    html += "<input type='number' name='startMin" + String(zone) + "' id='startMin" + String(zone) + "' min='0' max='59' value='" + String(startMin[zone]) + "' required style='width: 30px;'>";
-    html += "</div>";
+   html += "<div class='time-duration-container'>";
 
+  // First start time input
+  html += "<div class='time-input'>";
+  html += "<label for='startHour" + String(zone) + "'>Start Time 1:</label>";
+  html += "<input type='number' name='startHour" + String(zone) + "' id='startHour" + String(zone) + "' min='0' max='23' value='" + String(startHour[zone]) + "' required style='width: 30px;'> :";
+  html += "<input type='number' name='startMin" + String(zone) + "' id='startMin" + String(zone) + "' min='0' max='59' value='" + String(startMin[zone]) + "' required style='width: 30px;'>";
+  html += "</div>";
+
+
+
+    // Duration input
     html += "<div class='duration-input'>";
     html += "<label for='duration" + String(zone) + "'>Duration (minutes):</label>";
     html += "<input type='number' name='duration" + String(zone) + "' id='duration" + String(zone) + "' min='0' value='" + String(duration[zone]) + "' required style='width: 30px;'>";
+    html += "</div>";
+    html += "</div>";
+
+
+// Second start time input with inline enable/disable checkbox
+    html += "<div class='time-input' style='margin-top: 10px; display: flex; align-items: center; justify-content: space-between;'>";
+    html += "<div>";
+    html += "<label for='startHour2_" + String(zone) + "'>Start Time 2:</label>";
+    html += "<input type='number' name='startHour2_" + String(zone) + "' id='startHour2_" + String(zone) + "' min='0' max='23' value='" + String(startHour2[zone]) + "' required style='width: 30px;'> :";
+    html += "<input type='number' name='startMin2_" + String(zone) + "' id='startMin2_" + String(zone) + "' min='0' max='59' value='" + String(startMin2[zone]) + "' required style='width: 30px;'>";
+    html += "</div>";
+    html += "<div class='enable-input' style='margin-left: 20px;'>";
+    html += "<input type='checkbox' name='enableStartTime2_" + String(zone) + "' id='enableStartTime2_" + String(zone) + "'" + (enableStartTime2[zone] ? " checked" : "") + ">";
+    html += "<label for='enableStartTime2_" + String(zone) + "'>Enable/Disable Start Time 2</label>";
     html += "</div>";
     html += "</div>";
 
@@ -685,27 +732,34 @@ void handleRoot() {
 void handleSubmit() {
   for (int zone = 0; zone < numZones; zone++) {
     for (int i = 0; i < 7; i++) {
-      prevDays[zone][i] = days[zone][i];
-      days[zone][i] = server.arg("day" + String(zone) + "_" + String(i)) == "on";
+      prevDays[zone][i] = days[zone][i];  // Save the previous days state
+      days[zone][i] = server.arg("day" + String(zone) + "_" + String(i)) == "on";  // Update days based on form input
     }
 
+    // Update the first and second start times based on form input
     startHour[zone] = server.arg("startHour" + String(zone)).toInt();
     startMin[zone] = server.arg("startMin" + String(zone)).toInt();
+    startHour2[zone] = server.arg("startHour2_" + String(zone)).toInt();
+    startMin2[zone] = server.arg("startMin2_" + String(zone)).toInt();
     duration[zone] = server.arg("duration" + String(zone)).toInt();
     enableStartTime[zone] = server.arg("enableStartTime" + String(zone)) == "on";
+    enableStartTime2[zone] = server.arg("enableStartTime2_" + String(zone)) == "on";  // Handling enable/disable for second start time
+
   }
 
-  // Check if API key and city parameters are not empty
-  if (server.hasArg("apiKey") && server.hasArg("city")) {
+  // Handle API key, city, and DST adjustment settings if they are part of the form submission
+  if (server.hasArg("apiKey") && server.hasArg("city") && server.hasArg("dstAdjustment")) {
     String apiKey = server.arg("apiKey");
     String city = server.arg("city");
-    String dstAdjustmentStr = String(dstAdjustment);
-    
-    // Save configuration to LittleFS
-   saveConfig(apiKey.c_str(), city.c_str(), dstAdjustmentStr.toInt());
+    int dstAdjustmentValue = server.arg("dstAdjustment").toInt();  // Convert DST adjustment directly from form input
+
+    // Save the configuration changes to LittleFS
+    saveConfig(apiKey.c_str(), city.c_str(), dstAdjustmentValue);
   }
 
-  saveSchedule(); // Save the schedule to EEPROM
+  // Save the updated schedule to LittleFS
+  saveSchedule();
+  // Redirect the client to the root page
   server.sendHeader("Location", "/", true);
   server.send(302, "text/plain", "");
 }
@@ -740,66 +794,17 @@ void handleSetupPage() {
     server.send(200, "text/html", html);
 }
 
-void handleConnect() {
-  wifiManager.setDebugOutput(false);
-  wifiManager.autoConnect("ESPIrrigationAP");
-  newSsid = WiFi.SSID();
-  newPassword = WiFi.psk();
-  Serial.print("Connecting to WiFi...");
-  if (WiFi.begin(newSsid.c_str(), newPassword.c_str()) == WL_CONNECTED) {
-    Serial.println("WiFi connected");
-    Serial.print("IP address: ");
-    Serial.println(WiFi.localIP());
-    Serial.print("SSID: ");
-    Serial.println(WiFi.SSID());
-    Serial.print("Signal strength (RSSI): ");
-    Serial.println(WiFi.RSSI());
-    // Display connection status and details on LCD
-    lcd.setCursor(0, 0);
-    lcd.print("WiFi connected");
-    lcd.setCursor(0, 1);
-    lcd.print("IP:");
-    lcd.print(WiFi.localIP());
-    lcd.setCursor(0, 2);
-    lcd.print("SSID:");
-    lcd.print(WiFi.SSID());
-    lcd.setCursor(0, 3);
-    lcd.print("RSSI:");
-    lcd.print(WiFi.RSSI());
+void reconnectWiFi() {
+  Serial.println("Disconnecting and trying to reconnect...");
+  WiFi.disconnect(); // Disconnect from the WiFi network
+  if (!wifiManager.autoConnect("AutoConnectAP")) {
+    Serial.println("Reconnection failed.");
+    // Additional handling if reconnecting fails
   } else {
-    Serial.println("Failed to connect to WiFi");
-    // Display connection failure on LCD
-    lcd.setCursor(0, 0);
-    lcd.print("WiFi connection");
-    lcd.setCursor(0, 1);
-    lcd.print("failed");
+    Serial.println("Reconnected successfully.");
+    Serial.print("New IP address: ");
+    Serial.println(WiFi.localIP()); // Display the new IP address
   }
-}
-
-void saveSchedule() {
-  File file = LittleFS.open("/schedule.txt", "w");
-  if (!file) {
-    Serial.println("Failed to open schedule file for writing");
-    return;
-  }
-
-  for (int i = 0; i < numZones; i++) {
-    file.print(startHour[i]);
-    file.print(',');
-    file.print(startMin[i]);
-    file.print(',');
-    file.print(duration[i]);
-    file.print(',');
-    file.print(enableStartTime[i]);
-    file.print('\n');
-  }
-
-  for (int i = 0; i < 7; i++) {
-    file.print(days[0][i] ? '1' : '0');
-  }
-  file.print('\n');
-
-  file.close();
 }
 
 void loadSchedule() {
@@ -809,21 +814,52 @@ void loadSchedule() {
     return;
   }
 
-  for (int i = 0; i < numZones; i++) {
-    startHour[i] = file.parseInt();
-    file.read(); // Read ','
-    startMin[i] = file.parseInt();
-    file.read(); // Read ','
-    duration[i] = file.parseInt();
-    file.read(); // Read ','
-    enableStartTime[i] = file.parseInt();
-    file.read(); // Read '\n'
+   for (int i = 0; i < numZones; i++) {
+     startHour[i] = file.parseInt();
+     startMin[i] = file.parseInt();
+     startHour2[i] = file.parseInt();
+     startMin2[i] = file.parseInt();
+     duration[i] = file.parseInt();
+     enableStartTime[i] = file.parseInt() == 1;
+     enableStartTime2[i] = file.parseInt() == 1; 
+     file.read(); 
   }
 
   for (int i = 0; i < 7; i++) {
     days[0][i] = (file.read() == '1');
   }
   file.read(); // Read '\n'
+  file.close();
+}
+
+void saveSchedule() {
+  File file = LittleFS.open("/schedule.txt", "w");
+  if (!file) {
+    Serial.println("Failed to open schedule file for writing");
+    return;
+  }
+
+   for (int i = 0; i < numZones; i++) {
+     file.print(startHour[i]);
+     file.print(',');
+     file.print(startMin[i]);
+     file.print(',');
+     file.print(startHour2[i]);
+     file.print(',');
+     file.print(startMin2[i]);
+     file.print(',');
+     file.print(duration[i]);
+     file.print(',');
+     file.print(enableStartTime[i] ? "1" : "0");
+     file.print(',');
+     file.print(enableStartTime2[i] ? "1" : "0");
+     file.print('\n');
+  }
+
+  for (int i = 0; i < 7; i++) {
+    file.print(days[0][i] ? '1' : '0');
+  }
+  file.print('\n');
 
   file.close();
 }
