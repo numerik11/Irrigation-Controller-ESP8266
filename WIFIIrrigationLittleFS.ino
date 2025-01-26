@@ -54,13 +54,12 @@ unsigned long previousMillis = 0;
 const long interval = 3600000;   
 
 const int numZones = 4; 
-
 int startHour[numZones];
 int startMin[numZones];
 int startHour2[numZones];
 int startMin2[numZones];
 int duration[numZones];
-bool enableStartTime[numZones];
+bool enableStartTime[numZones] = {true, true, true, true}; // Always enabled for all zones
 bool enableStartTime2[numZones];
 bool days[4][7] =     {{false, true, false, true, false, true, false},  
                        {false, true, false, true, false, true, false},
@@ -184,7 +183,7 @@ void setup() {
 void loop() {
   ArduinoOTA.handle();
   server.handleClient();
-
+  delay(1000); 
   unsigned long currentMillis = millis();
 
   // Check if it's time to update the weather data and LCD display
@@ -344,13 +343,9 @@ void checkWateringSchedule(int zone, int dstAdjustment) {
   int currentDay = timeClient.getDay();
   int currentHour = timeClient.getHours();
   int currentMin = timeClient.getMinutes();
-
-  int currentHourWithDST = currentHour + dstAdjustment;
-  if (currentHourWithDST >= 24) {
-    currentHourWithDST -= 24;
-  }
-
-  if (shouldWater(zone, currentDay, currentHourWithDST, currentMin)) {
+  int currentHourWithDST = timeClient.getHours() + dstAdjustment;
+  if (currentHourWithDST >= 24) currentHourWithDST -= 24; 
+  if (shallWater(zone, currentDay, currentHourWithDST, currentMin)) {
     if (!valveOn[zone]) {
       if (!weatherCheckRequired) {
         weatherCheckRequired = true;
@@ -382,22 +377,30 @@ bool hasValveReachedDuration(int zone) {
   lcd.noBacklight();
 }
 
-bool shouldWater(int zone, int currentDay, int currentHour, int currentMin) {
+bool shallWater(int zone, int currentDay, int currentHour, int currentMin) {
+  // Check if watering is enabled for the current day
   if (days[zone][currentDay]) {
-    if (enableStartTime[zone] && currentHour == startHour[zone] && currentMin == startMin[zone]) {
-      return true;
+        // Check if Start Time 1 or Start Time 2 matches the current time
+    if (enableStartTime[zone] || true) { // Always enable Start Time 1
+      if (currentHour == startHour[zone] && currentMin == startMin[zone]) {
+         return true;
+      }
     }
-    if (enableStartTime2[zone] && currentHour == startHour2[zone] && currentMin == startMin2[zone]) {
-      return true;
+    if (enableStartTime2[zone]) { // Check for Start Time 2
+      if (currentHour == startHour2[zone] && currentMin == startMin2[zone]) {
+          return true;
+      }
     }
   }
+
   return false;
 }
 
 bool isTankLevelLow() {
   // Read the tank level using the analog pin
-  int tankLevel = analogRead(tankLevelPin);
-
+ int tankLevel = analogRead(tankLevelPin);
+ Serial.print("Tank level: ");
+ Serial.println(tankLevel);
   // Adjust the threshold based on your sensor and tank configuration
   int threshold = 500;
 
@@ -405,33 +408,58 @@ bool isTankLevelLow() {
 }
 
 void turnOnValve(int zone) {
+    // Start the valve and record the start time
+    lcd.clear();
+    digitalWrite(valvePins[zone], HIGH);  // Turn on the valve
+    valveStartTime[zone] = millis();  // Record the time when the valve was turned on
     lcd.backlight();
-    loadConfig();
-  valveStartTime[zone] = millis();
+    lcd.setCursor(0, 0);
+    lcd.print("Zone ");
+    lcd.print(zone + 1);
+    lcd.print(" On");
+    delay(2000);
+    lcd.clear();
+    if (isTankLevelLow()) {
+        digitalWrite(mainsSolenoidPin, HIGH);  // Turn on mains solenoid
+        lcd.setCursor(0, 1);
+        lcd.print("Source: Mains");
+    } else {
+        digitalWrite(tankSolenoidPin, HIGH);  // Turn on tank solenoid
+        lcd.setCursor(0, 1);
+        lcd.print("Source: Tank");
+    }
 
-  if (isTankLevelLow()) {
-    // If tank level is low, use mainsSolenoidPin solenoid
-    digitalWrite(mainsSolenoidPin, HIGH);
-    Serial.println("Using mainsSolenoidPin solenoid (master)");
-  } else {
-    // If tank level is above low, use water tank solenoid
-    digitalWrite(tankSolenoidPin, HIGH);
-    Serial.println("Using water tank solenoid (slave)");
-  }
+    delay(2000);
+    lcd.clear();
 
-  if (!checkForRain()) { // Check weather only when turning on the solenoid
-    digitalWrite(valvePins[zone], HIGH);
-    Serial.println("Valve " + String(zone + 1) + " On");
-    Serial.print("Duration: ");
-    Serial.print(duration[zone]);
-    Serial.println(" Mins");
-    updateLCD();
-    server.sendHeader("Location", "/", true);
-    server.send(302, "text/plain", "");
-  } else {
-    Serial.println("It's raining. Valve will not be turned on.");
-    turnOffValve(zone); // Turn off the valve immediately if it's raining
-  }
+    // Keep the valve on until the duration is over or a manual interruption occurs
+    while (true) {
+        unsigned long elapsedTime = (millis() - valveStartTime[zone]) / 1200;  // Calculate elapsed time in seconds
+        if (elapsedTime >= (duration[zone] * 60)) {  // Check if the duration is over
+            }
+        // Check for manual interruption (via HTTP or button press)
+            server.handleClient(); // Process HTTP requests
+        if (!valveOn[zone]) { // Valve manually turned off
+            Serial.print("Zone ");
+            Serial.print(zone + 1);
+            Serial.println(" manually turned off.");
+            return;  // Exit without turning off the valve again
+            break;  // Exit the loop
+        }
+
+        // Update the LCD with remaining time
+        unsigned long remainingTime = (duration[zone] * 60) - elapsedTime;
+        lcd.setCursor(0, 1);
+        lcd.print("Remaining: ");
+        lcd.print(remainingTime / 60);
+        lcd.print("m ");
+        lcd.print(remainingTime % 60);
+        lcd.print("s");
+        delay(1000);  // Update every 1 second
+    }
+
+    // Turn off the valve after the duration
+    turnOffValve(zone);
 }
 
 void turnOnValveMan(int zone) {
@@ -522,30 +550,19 @@ String getDayName(int dayIndex) {
 }
 
 String getWeatherData() {
-  //loadConfig();
-  HTTPClient http;
-   // Create the URL for the OpenWeather API request
-  String url = "http://api.openweathermap.org/data/2.5/weather?id=" + city + "&appid=" + apiKey + "&units=metric";
- 
-  // Send the GET request to the OpenWeather API
-  http.begin(client, url); // Pass the WiFiClient object by reference
-  int httpResponseCode = http.GET();
-
-  String payload = "{}"; // Default empty JSON string
-
-  if (httpResponseCode > 0) {
-    // Read the JSON response
-    payload = http.getString();
-  } else {
-    Serial.print("Error code: ");
-    Serial.println(httpResponseCode);
-    Serial.println(payload);
-  }
-
-  http.end(); // Close the connection
-
-  return payload;
-  delay(1000);
+    HTTPClient http;
+    http.setTimeout(5000); // 5-second timeout
+    String url = "http://api.openweathermap.org/data/2.5/weather?id=" + city + "&appid=" + apiKey + "&units=metric";
+    http.begin(client, url);
+    int httpResponseCode = http.GET();
+    String payload = "{}";
+    if (httpResponseCode > 0) {
+        payload = http.getString();
+    } else {
+        Serial.println("Error: Unable to fetch weather data.");
+    }
+    http.end();
+    return payload;
 }
 
 void handleRoot() {
@@ -666,7 +683,7 @@ void handleRoot() {
     html += "</div>";
 
 
-// Second start time input with inline enable/disable checkbox
+ // Second start time input with inline enable/disable checkbox
     html += "<div class='time-input' style='margin-top: 10px; display: flex; align-items: center; justify-content: space-between;'>";
     html += "<div>";
     html += "<label for='startHour2_" + String(zone) + "'>Start Time 2:</label>";
@@ -742,7 +759,6 @@ void handleSubmit() {
     startHour2[zone] = server.arg("startHour2_" + String(zone)).toInt();
     startMin2[zone] = server.arg("startMin2_" + String(zone)).toInt();
     duration[zone] = server.arg("duration" + String(zone)).toInt();
-    enableStartTime[zone] = server.arg("enableStartTime" + String(zone)) == "on";
     enableStartTime2[zone] = server.arg("enableStartTime2_" + String(zone)) == "on";  // Handling enable/disable for second start time
 
   }
@@ -795,40 +811,51 @@ void handleSetupPage() {
 }
 
 void reconnectWiFi() {
-  Serial.println("Disconnecting and trying to reconnect...");
-  WiFi.disconnect(); // Disconnect from the WiFi network
-  if (!wifiManager.autoConnect("AutoConnectAP")) {
-    Serial.println("Reconnection failed.");
-    // Additional handling if reconnecting fails
-  } else {
-    Serial.println("Reconnected successfully.");
-    Serial.print("New IP address: ");
-    Serial.println(WiFi.localIP()); // Display the new IP address
-  }
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("Reconnecting to WiFi...");
+        WiFi.disconnect();
+        delay(1000); // Small delay to stabilize
+        if (!wifiManager.autoConnect("ESPIrrigationAP")) {
+            Serial.println("Reconnection failed.");
+        } else {
+            Serial.println("Reconnected successfully.");
+        }
+    } else {
+        Serial.println("WiFi already connected.");
+    }
 }
 
 void loadSchedule() {
-   File file = LittleFS.open("/schedule.txt", "r");
+  File file = LittleFS.open("/schedule.txt", "r");
   if (!file) {
     Serial.println("Failed to open schedule file for reading");
     return;
   }
 
-   for (int i = 0; i < numZones; i++) {
-     startHour[i] = file.parseInt();
-     startMin[i] = file.parseInt();
-     startHour2[i] = file.parseInt();
-     startMin2[i] = file.parseInt();
-     duration[i] = file.parseInt();
-     enableStartTime[i] = file.parseInt() == 1;
-     enableStartTime2[i] = file.parseInt() == 1; 
-     file.read(); 
+  for (int i = 0; i < numZones; i++) {
+    startHour[i] = file.parseInt();
+    startMin[i] = file.parseInt();
+    startHour2[i] = file.parseInt();
+    startMin2[i] = file.parseInt();
+    duration[i] = file.parseInt();
+    enableStartTime2[i] = file.parseInt() == 1;
+    file.read(); // Read the newline or separator
+    Serial.print("Zone ");
+    Serial.print(i + 1);
+    Serial.print(": Start1: ");
+    Serial.print(startHour[i]);
+    Serial.print(":");
+    Serial.print(startMin[i]);
+    Serial.print(", Start2: ");
+    Serial.print(startHour2[i]);
+    Serial.print(":");
+    Serial.print(startMin2[i]);
+    Serial.print(", Duration: ");
+    Serial.print(duration[i]);
+    Serial.print(" mins");    
+    Serial.print(", Enable2: ");
+    Serial.println(enableStartTime2[i]);
   }
-
-  for (int i = 0; i < 7; i++) {
-    days[0][i] = (file.read() == '1');
-  }
-  file.read(); // Read '\n'
   file.close();
 }
 
@@ -862,6 +889,13 @@ void saveSchedule() {
   file.print('\n');
 
   file.close();
+
+    lcd.backlight();
+    lcd.clear();
+    lcd.setCursor(5, 0);
+    lcd.print("SAVED!!");
+    delay(3000);
+    lcd.noBacklight();
 }
 
 void saveConfig(const char* apiKey, const char* city, int dstAdjustment) {
@@ -876,6 +910,13 @@ void saveConfig(const char* apiKey, const char* city, int dstAdjustment) {
   configFile.println(city);
   configFile.println(dstAdjustment); // Save DST offset
   configFile.close();
+
+    lcd.backlight();
+    lcd.clear();
+    lcd.setCursor(5, 0);
+    lcd.print("SAVED :)");
+    delay(3000);
+    lcd.noBacklight();
 
   Serial.println("Configuration saved");
 }
