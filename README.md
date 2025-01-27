@@ -7,7 +7,9 @@ type in Local IP address displayed on the LCD on start up.
 Add a 1N4007 or diode between + and - terminals on the solenoids to prevent flyback voltage that will crash the esp8266.
 Values are stored in LittleFS and will remain if there is reset or power loss. 
 
-1. Connect to ESPIrrigationAP with phone or computer wifi. Enter Your Wifi router Username and Password Details.
+--Initial Setup--
+
+1. Connect to ESPIrrigationAP in WiFi list with phone or computer WiFi. Enter Your Wifi router Username and Password Details.
 
 2. Use a browser and enter IP ADDRESS in browser address bar displayed when powering up.
 
