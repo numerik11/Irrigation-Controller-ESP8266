@@ -649,60 +649,65 @@ void handleRoot() {
 
   // Display the days of the week, start times, duration, and manual control buttons for each zone
   for (int zone = 0; zone < numZones; zone++) {
-    html += "<div class='zone-container'>";
-    html += "<p><strong>Zone " + String(zone + 1) + ":</strong></p>";
+  html += "<div class='zone-container'>";
+  html += "<p><strong>Zone " + String(zone + 1) + ":</strong></p>";
 
-    // Days checkboxes
-    html += "<div class='days-container'>";
-    for (int i = 0; i < 7; i++) {
-      String dayLabel = getDayName(i);
-      String checked = days[zone][i] ? "checked" : "";
-      html += "<div class='checkbox-container'>";
-      html += "<input type='checkbox' name='day" + String(zone) + "_" + String(i) + "' id='day" + String(zone) + "_" + String(i) + "' " + checked + ">";
-      html += "<label for='day" + String(zone) + "_" + String(i) + "'>" + dayLabel + "</label>";
-      html += "</div>";
-    }
-    html += "</div>";
+  // Days checkboxes
+  html += "<div class='days-container'>";
+  for (int i = 0; i < 7; i++) {
+  String dayLabel = getDayName(i);
+  String checked = days[zone][i] ? "checked" : "";
+  html += "<div class='checkbox-container'>";
+  html += "<input type='checkbox' name='day" + String(zone) + "_" + String(i) + "' id='day" + String(zone) + "_" + String(i) + "' " + checked + ">";
+  html += "<label for='day" + String(zone) + "_" + String(i) + "'>" + dayLabel + "</label>";
+  html += "</div>";
+  }
+  html += "</div>";
 
-   html += "<div class='time-duration-container'>";
+  // Time and duration inputs
+  html += "<div class='time-duration-container'>";
 
   // First start time input
   html += "<div class='time-input'>";
   html += "<label for='startHour" + String(zone) + "'>Start Time 1:</label>";
-  html += "<input type='number' name='startHour" + String(zone) + "' id='startHour" + String(zone) + "' min='0' max='23' value='" + String(startHour[zone]) + "' required style='width: 30px;'> :";
-  html += "<input type='number' name='startMin" + String(zone) + "' id='startMin" + String(zone) + "' min='0' max='59' value='" + String(startMin[zone]) + "' required style='width: 30px;'>";
+  html += "<input type='number' name='startHour" + String(zone) + "' id='startHour" + String(zone) + "' min='0' max='12' value='" + String(startHour[zone]) + "' required style='width: 60px;'> : ";
+  html += "<input type='number' name='startMin" + String(zone) + "' id='startMin" + String(zone) + "' min='0' max='59' value='" + String(startMin[zone]) + "' required style='width: 60px;'>";
   html += "</div>";
 
+  // Add spacing after Start Time 1
+  html += "<div style='margin-bottom: 10px;'></div>";
 
+  // Duration input
+  html += "<div class='duration-input'>";
+  html += "<label for='duration" + String(zone) + "'>Duration (minutes):</label>";
+  html += "<input type='number' name='duration" + String(zone) + "' id='duration" + String(zone) + "' min='0' value='" + String(duration[zone]) + "' required style='width: 60px;'>";
+  html += "</div>";
+  html += "</div>";
 
-    // Duration input
-    html += "<div class='duration-input'>";
-    html += "<label for='duration" + String(zone) + "'>Duration (minutes):</label>";
-    html += "<input type='number' name='duration" + String(zone) + "' id='duration" + String(zone) + "' min='0' value='" + String(duration[zone]) + "' required style='width: 30px;'>";
-    html += "</div>";
-    html += "</div>";
+  // Second start time input with enable/disable checkbox
+  html += "<div class='time-input second-start-time'>";
+  html += "<div>";
+  html += "<label for='startHour2" + String(zone) + "'>Start Time 2:</label>";
+  html += "<input type='number' name='startHour2" + String(zone) + "' id='startHour2" + String(zone) + "' min='0' max='23' value='" + String(startHour2[zone]) + "' required style='width: 60px;'> : ";
+  html += "<input type='number' name='startMin2" + String(zone) + "' id='startMin2" + String(zone) + "' min='0' max='59' value='" + String(startMin2[zone]) + "' required style='width: 60px;'>";
+  html += "</div>";
 
+  // Add spacing before enable/disable button
+  html += "<div style='margin-top: 10px;'></div>";
 
- // Second start time input with inline enable/disable checkbox
-    html += "<div class='time-input' style='margin-top: 10px; display: flex; align-items: center; justify-content: space-between;'>";
-    html += "<div>";
-    html += "<label for='startHour2_" + String(zone) + "'>Start Time 2:</label>";
-    html += "<input type='number' name='startHour2_" + String(zone) + "' id='startHour2_" + String(zone) + "' min='0' max='23' value='" + String(startHour2[zone]) + "' required style='width: 30px;'> :";
-    html += "<input type='number' name='startMin2_" + String(zone) + "' id='startMin2_" + String(zone) + "' min='0' max='59' value='" + String(startMin2[zone]) + "' required style='width: 30px;'>";
-    html += "</div>";
-    html += "<div class='enable-input' style='margin-left: 20px;'>";
-    html += "<input type='checkbox' name='enableStartTime2_" + String(zone) + "' id='enableStartTime2_" + String(zone) + "'" + (enableStartTime2[zone] ? " checked" : "") + ">";
-    html += "<label for='enableStartTime2_" + String(zone) + "'>Enable/Disable Start Time 2</label>";
-    html += "</div>";
-    html += "</div>";
+  html += "<div class='enable-input'>";
+  html += "<input type='checkbox' name='enableStartTime2" + String(zone) + "' id='enableStartTime2" + String(zone) + "'" + (enableStartTime2[zone] ? " checked" : "") + ">";
+  html += "<label for='enableStartTime2" + String(zone) + "'>Enable/Disable Start Time 2</label>";
+  html += "</div>";
+  html += "</div>";
 
-    // Manual control buttons
-    html += "<div class='manual-control-container'>";
-    html += "<button type='button' class='turn-on-btn' data-zone='" + String(zone) + "'>Turn On</button>";
-    html += "<button type='button' class='turn-off-btn' data-zone='" + String(zone) + "'>Turn Off</button>";
-    html += "</div>";
+  // Manual control buttons
+  html += "<div class='manual-control-container'>";
+  html += "<button type='button' class='turn-on-btn' data-zone='" + String(zone) + "'>Turn On</button>";
+  html += "<button type='button' class='turn-off-btn' data-zone='" + String(zone) + "'>Turn Off</button>";
+  html += "</div>";
 
-    html += "</div>"; // End of zone-container
+  html += "</div>"; // End of zone-container
   }
 
   // JavaScript to handle manual control buttons
@@ -747,37 +752,69 @@ void handleRoot() {
 }
 
 void handleSubmit() {
+  // Process irrigation zones
   for (int zone = 0; zone < numZones; zone++) {
+    Serial.println("Processing Zone " + String(zone));
+
     for (int i = 0; i < 7; i++) {
-      prevDays[zone][i] = days[zone][i];  // Save the previous days state
-      days[zone][i] = server.arg("day" + String(zone) + "_" + String(i)) == "on";  // Update days based on form input
+      String dayArg = "day" + String(zone) + "_" + String(i);
+      if (server.hasArg(dayArg)) {
+        prevDays[zone][i] = days[zone][i];  // Save previous state
+        days[zone][i] = server.arg(dayArg) == "on";  // Update based on form input
+      } else {
+        Serial.println("Missing argument: " + dayArg);
+      }
     }
 
-    // Update the first and second start times based on form input
-    startHour[zone] = server.arg("startHour" + String(zone)).toInt();
-    startMin[zone] = server.arg("startMin" + String(zone)).toInt();
-    startHour2[zone] = server.arg("startHour2_" + String(zone)).toInt();
-    startMin2[zone] = server.arg("startMin2_" + String(zone)).toInt();
-    duration[zone] = server.arg("duration" + String(zone)).toInt();
-    enableStartTime2[zone] = server.arg("enableStartTime2_" + String(zone)) == "on";  // Handling enable/disable for second start time
+    // Validate and update start times
+    if (server.hasArg("startHour" + String(zone)) && server.hasArg("startMin" + String(zone))) {
+      startHour[zone] = server.arg("startHour" + String(zone)).toInt();
+      startMin[zone] = server.arg("startMin" + String(zone)).toInt();
+    } else {
+      Serial.println("Missing start time for Zone " + String(zone));
+    }
 
+    // Validate and update second start time
+    if (server.hasArg("startHour2" + String(zone)) && server.hasArg("startMin2" + String(zone))) {
+      startHour2[zone] = server.arg("startHour2" + String(zone)).toInt();
+      startMin2[zone] = server.arg("startMin2" + String(zone)).toInt();
+    } else {
+      Serial.println("Missing second start time for Zone " + String(zone));
+    }
+
+    // Update duration
+    if (server.hasArg("duration" + String(zone))) {
+      duration[zone] = server.arg("duration" + String(zone)).toInt();
+    } else {
+      Serial.println("Missing duration for Zone " + String(zone));
+    }
+
+    // Update enable/disable for second start time
+    enableStartTime2[zone] = server.arg("enableStartTime2" + String(zone)) == "on";
   }
 
-  // Handle API key, city, and DST adjustment settings if they are part of the form submission
-  if (server.hasArg("apiKey") && server.hasArg("city") && server.hasArg("dstAdjustment")) {
-    String apiKey = server.arg("apiKey");
-    String city = server.arg("city");
-    int dstAdjustmentValue = server.arg("dstAdjustment").toInt();  // Convert DST adjustment directly from form input
+  // Handle API key, city, and DST adjustment
+  if (server.hasArg("apiKey") || server.hasArg("city") || server.hasArg("dstAdjustment")) {
+    String apiKey = server.hasArg("apiKey") ? server.arg("apiKey") : "";
+    String city = server.hasArg("city") ? server.arg("city") : "";
+    int dstAdjustmentValue = server.hasArg("dstAdjustment") ? server.arg("dstAdjustment").toInt() : 0;
 
-    // Save the configuration changes to LittleFS
+    // Save the configuration changes
+    Serial.println("Saving configuration...");
     saveConfig(apiKey.c_str(), city.c_str(), dstAdjustmentValue);
+  } else {
+    Serial.println("No configuration updates provided.");
   }
 
   // Save the updated schedule to LittleFS
+  Serial.println("Saving schedule...");
   saveSchedule();
+
   // Redirect the client to the root page
   server.sendHeader("Location", "/", true);
   server.send(302, "text/plain", "");
+
+  Serial.println("Redirecting to root page.");
 }
 
 void handleSetupPage() {
@@ -833,29 +870,52 @@ void loadSchedule() {
   }
 
   for (int i = 0; i < numZones; i++) {
-    startHour[i] = file.parseInt();
-    startMin[i] = file.parseInt();
-    startHour2[i] = file.parseInt();
-    startMin2[i] = file.parseInt();
-    duration[i] = file.parseInt();
-    enableStartTime2[i] = file.parseInt() == 1;
-    file.read(); // Read the newline or separator
-    Serial.print("Zone ");
-    Serial.print(i + 1);
-    Serial.print(": Start1: ");
-    Serial.print(startHour[i]);
-    Serial.print(":");
-    Serial.print(startMin[i]);
-    Serial.print(", Start2: ");
-    Serial.print(startHour2[i]);
-    Serial.print(":");
-    Serial.print(startMin2[i]);
-    Serial.print(", Duration: ");
-    Serial.print(duration[i]);
-    Serial.print(" mins");    
-    Serial.print(", Enable2: ");
-    Serial.println(enableStartTime2[i]);
+    String line = file.readStringUntil('\n'); // Read the entire line
+    if (line.length() > 0) {
+      int index = 0;
+
+      startHour[i] = line.substring(index, line.indexOf(',', index)).toInt();
+      index = line.indexOf(',', index) + 1;
+
+      startMin[i] = line.substring(index, line.indexOf(',', index)).toInt();
+      index = line.indexOf(',', index) + 1;
+
+      startHour2[i] = line.substring(index, line.indexOf(',', index)).toInt();
+      index = line.indexOf(',', index) + 1;
+
+      startMin2[i] = line.substring(index, line.indexOf(',', index)).toInt();
+      index = line.indexOf(',', index) + 1;
+
+      duration[i] = line.substring(index, line.indexOf(',', index)).toInt();
+      index = line.indexOf(',', index) + 1;
+
+      enableStartTime[i] = line.substring(index, line.indexOf(',', index)).toInt() == 1;
+      index = line.indexOf(',', index) + 1;
+
+      enableStartTime2[i] = line.substring(index).toInt() == 1;
+
+      // Debugging Output
+      Serial.print("Zone ");
+      Serial.print(i + 1);
+      Serial.print(": Start1: ");
+      Serial.print(startHour[i]);
+      Serial.print(":");
+      Serial.print(startMin[i]);
+      Serial.print(", Start2: ");
+      Serial.print(startHour2[i]);
+      Serial.print(":");
+      Serial.print(startMin2[i]);
+      Serial.print(", Duration: ");
+      Serial.print(duration[i]);
+      Serial.print(" mins");
+      Serial.print(", Enable2: ");
+      Serial.println(enableStartTime2[i]);
+    } else {
+      Serial.print("Error: Missing data for zone ");
+      Serial.println(i + 1);
+    }
   }
+
   file.close();
 }
 
@@ -866,36 +926,44 @@ void saveSchedule() {
     return;
   }
 
-   for (int i = 0; i < numZones; i++) {
-     file.print(startHour[i]);
-     file.print(',');
-     file.print(startMin[i]);
-     file.print(',');
-     file.print(startHour2[i]);
-     file.print(',');
-     file.print(startMin2[i]);
-     file.print(',');
-     file.print(duration[i]);
-     file.print(',');
-     file.print(enableStartTime[i] ? "1" : "0");
-     file.print(',');
-     file.print(enableStartTime2[i] ? "1" : "0");
-     file.print('\n');
+  for (int i = 0; i < numZones; i++) {
+    file.print(startHour[i]);
+    file.print(',');
+    file.print(startMin[i]);
+    file.print(',');
+    file.print(startHour2[i]);
+    file.print(',');
+    file.print(startMin2[i]);
+    file.print(',');
+    file.print(duration[i]);
+    file.print(',');
+    file.print(enableStartTime[i] ? "1" : "0");
+    file.print(',');
+    file.print(enableStartTime2[i] ? "1" : "0");
+    file.print('\n');
   }
 
-  for (int i = 0; i < 7; i++) {
-    file.print(days[0][i] ? '1' : '0');
+  // Debugging output to ensure data is saved correctly
+  Serial.println("Schedule saved:");
+  for (int i = 0; i < numZones; i++) {
+    Serial.print("Zone "); Serial.print(i + 1);
+    Serial.print(": Start1: "); Serial.print(startHour[i]); Serial.print(":");
+    Serial.print(startMin[i]);
+    Serial.print(", Start2: "); Serial.print(startHour2[i]); Serial.print(":");
+    Serial.print(startMin2[i]);
+    Serial.print(", Duration: "); Serial.print(duration[i]); Serial.print(" mins");
+    Serial.print(", Enable2: "); Serial.println(enableStartTime2[i]);
   }
-  file.print('\n');
 
   file.close();
 
-    lcd.backlight();
-    lcd.clear();
-    lcd.setCursor(5, 0);
-    lcd.print("SAVED!!");
-    delay(3000);
-    lcd.noBacklight();
+  // LCD feedback
+  lcd.backlight();
+  lcd.clear();
+  lcd.setCursor(5, 0);
+  lcd.print("SAVED!!");
+  delay(3000);
+  lcd.noBacklight();
 }
 
 void saveConfig(const char* apiKey, const char* city, int dstAdjustment) {
