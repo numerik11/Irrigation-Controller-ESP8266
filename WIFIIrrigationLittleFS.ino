@@ -87,49 +87,52 @@ void setup() {
   lcd.print("Smart Irrigation");
   lcd.setCursor(5, 1);
   lcd.print("System");
-  delay(2000);
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("ESPIrrigation");
-  lcd.setCursor(0, 1);
-  lcd.print("IP: 192.168.4.1");
-  
-  // Begin LittleFS
+   
   if (!LittleFS.begin()) {
     Serial.println("Failed to mount LittleFS");
     return;
   }
-  
-  wifiManager.autoConnect("ESPIrrigationAP");
+
+  loadConfig();
+  loadSchedule();
+
+  // Set a timeout for the WiFiManager
   wifiManager.setTimeout(180); // 180 seconds before timeout
 
-  // Try to connect to WiFi network saved in EEPROM
+  // Attempt to connect using WiFiManager
   if (!wifiManager.autoConnect("ESPIrrigationAP")) {
-    Serial.println("Failed to connect and hit timeout");
-    ESP.restart(); // Restart the ESP if connection fails
-  }
+    Serial.println("Failed to connect to WiFi. Restarting...");
+    
+    // Display fallback info on LCD
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("ESPIrrigation");
+    lcd.setCursor(0, 1);
+    lcd.print("IP: 192.168.4.1");
+    
+    // Restart ESP after timeout
+    ESP.restart();
+    }
 
-  // Load schedule from LittleFS
-  loadSchedule();
-  loadConfig();
-
-  // Connected to WiFi
-  Serial.println("WiFi connected");
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
-  Serial.print("SSID: ");
-  Serial.println(WiFi.SSID());
-  Serial.print("Signal strength (RSSI): ");
-  Serial.println(WiFi.RSSI());
-  // Display connection status and details on LCD
-   
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print(WiFi.SSID());
-  lcd.setCursor(0, 1);
-  lcd.print(WiFi.localIP());
-  delay(5000); 
-
+  // At this point, WiFi is either connected or fallback has occurred
+  if (WiFi.status() != WL_CONNECTED) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("ESPIrrigation");
+    lcd.setCursor(0, 1);
+    lcd.print("IP: 192.168.4.1");
+  } else {
+    Serial.println("WiFi connected!");
+    Serial.print("IP Address: ");
+    Serial.println(WiFi.localIP());
+    
+    // Optional: Update LCD with connected IP
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Connected!");
+    lcd.setCursor(0, 1);
+    lcd.print(WiFi.localIP().toString());
+ }
   // Fetch weather data
   String weatherData = getWeatherData();
 
@@ -172,8 +175,8 @@ void setup() {
   server.on("/configure", HTTP_POST, handleConfigure); 
 
   for (int i = 0; i < 4; i++) {
-    server.on("/valve/on" + String(i), HTTP_POST, [i]() { turnOnValveMan(i); });
-    server.on("/valve/off" + String(i), HTTP_POST, [i]() { turnOffValveMan(i); });
+    server.on("/valve/on" + String(i), HTTP_POST, [i]() { turnOnValveManualy(i); });
+    server.on("/valve/off" + String(i), HTTP_POST, [i]() { turnOffValveManualy(i); });
   }
 
   // Start the server
@@ -183,7 +186,6 @@ void setup() {
 void loop() {
   ArduinoOTA.handle();
   server.handleClient();
-  delay(1000); 
   unsigned long currentMillis = millis();
 
   // Check if it's time to update the weather data and LCD display
@@ -297,12 +299,12 @@ void updateWeatherVariables(const String& jsonData) {
   delay(1000);
 }
 
-void displayRainMessage() {
+void displayRainMessage() { 
   lcd.clear();
   lcd.setCursor(4, 1);
   lcd.print("Raining");
-  delay(60000);
-  lcd.clear();
+  delay(15000);
+  lcd.noBacklight();
 }
 
 void updateLCDForZone(int zone) {
@@ -331,10 +333,10 @@ void updateLCDForZone(int zone) {
   } else {
     String completeText = "Complete";
     lcd.clear();
-    lcd.setCursor((16 - completeText.length()) / 2, 0); // Center "Complete" in the middle of the screen
+    lcd.setCursor(4, 0); // Center "Complete" in the middle of the screen
     lcd.print(completeText);
-    delay(1000); // Delay to show "Complete", consider using non-blocking delay in the future
-  }
+    delay(2000); // Delay to show "Complete", consider using non-blocking delay in the future
+         }
 }
 
 void checkWateringSchedule(int zone, int dstAdjustment) {
@@ -362,19 +364,12 @@ void checkWateringSchedule(int zone, int dstAdjustment) {
       valveOn[zone] = true;
     }
   } else {
-    if (valveOn[zone] && hasValveReachedDuration(zone)) {
+    if (valveOn[zone] && hasDurationCompleted(zone)) {
       turnOffValve(zone);
       valveOn[zone] = false;
       weatherCheckRequired = false;
     }
   }
-}
-
-bool hasValveReachedDuration(int zone) {
-  unsigned long elapsedTime = (millis() - valveStartTime[zone]) / 1000;
-  unsigned long totalDuration = duration[zone] * 60;
-  return valveOn[zone] && (elapsedTime >= totalDuration);
-  lcd.noBacklight();
 }
 
 bool shallWater(int zone, int currentDay, int currentHour, int currentMin) {
@@ -434,7 +429,7 @@ void turnOnValve(int zone) {
 
     // Keep the valve on until the duration is over or a manual interruption occurs
     while (true) {
-        unsigned long elapsedTime = (millis() - valveStartTime[zone]) / 1200;  // Calculate elapsed time in seconds
+        unsigned long elapsedTime = (millis() - valveStartTime[zone]) / 1005;  // Calculate elapsed time in seconds
         if (elapsedTime >= (duration[zone] * 60)) {  // Check if the duration is over
             }
         // Check for manual interruption (via HTTP or button press)
@@ -455,22 +450,28 @@ void turnOnValve(int zone) {
         lcd.print("m ");
         lcd.print(remainingTime % 60);
         lcd.print("s");
-        delay(1000);  // Update every 1 second
     }
 
     // Turn off the valve after the duration
     turnOffValve(zone);
 }
 
-void turnOnValveMan(int zone) {
+bool hasDurationCompleted(int zone) {
+  unsigned long elapsedTime = (millis() - valveStartTime[zone]) / 1000;
+  unsigned long totalDuration = duration[zone] * 60;
+  return valveOn[zone] && (elapsedTime >= totalDuration);
+  lcd.noBacklight();
+}
+
+void turnOnValveManualy(int zone) {
   digitalWrite(valvePins[zone], HIGH);
   lcd.backlight(); 
   lcd.clear();
   // Print debug information
-    lcd.setCursor(3, 0);
+    lcd.setCursor(0, 0);
     lcd.print("Valve ");
     lcd.print(zone + 1);
-    lcd.print(" On");
+    lcd.print("Manual On");
     server.send(200, "text/plain", "Valve " + String(zone + 1) + " turned on");       
 }
 
@@ -512,14 +513,14 @@ void turnOffValve(int zone) {
   lcd.print("Te:");
   lcd.print(temperature);
   lcd.print("C Hu:");
-  lcd.print(humidity); // Depending on the range of humidity, you may need to abbreviate or omit parts
+  lcd.print(humidity); //
   lcd.print("%");
-  delay(2000);
+  delay(3000);
   lcd.noBacklight();
   loop();
 }
 
-void turnOffValveMan(int zone) {
+void turnOffValveManualy(int zone) {
   digitalWrite(valvePins[zone], LOW);
   lcd.clear(); 
   lcd.setCursor(3, 0);
@@ -655,13 +656,13 @@ void handleRoot() {
   // Days checkboxes
   html += "<div class='days-container'>";
   for (int i = 0; i < 7; i++) {
-  String dayLabel = getDayName(i);
-  String checked = days[zone][i] ? "checked" : "";
-  html += "<div class='checkbox-container'>";
-  html += "<input type='checkbox' name='day" + String(zone) + "_" + String(i) + "' id='day" + String(zone) + "_" + String(i) + "' " + checked + ">";
-  html += "<label for='day" + String(zone) + "_" + String(i) + "'>" + dayLabel + "</label>";
-  html += "</div>";
-  }
+    String dayLabel = getDayName(i);
+    String checked = days[zone][i] ? "checked" : ""; // Use `days` array for checked state
+    html += "<div class='checkbox-container'>";
+    html += "<input type='checkbox' name='day" + String(zone) + "_" + String(i) + "' id='day" + String(zone) + "_" + String(i) + "' " + checked + ">";
+    html += "<label for='day" + String(zone) + "_" + String(i) + "'>" + dayLabel + "</label>";
+    html += "</div>";
+    }
   html += "</div>";
 
   // Time and duration inputs
@@ -754,19 +755,17 @@ void handleRoot() {
 void handleSubmit() {
   // Process irrigation zones
   for (int zone = 0; zone < numZones; zone++) {
-    Serial.println("Processing Zone " + String(zone));
-
     for (int i = 0; i < 7; i++) {
-      String dayArg = "day" + String(zone) + "_" + String(i);
-      if (server.hasArg(dayArg)) {
-        prevDays[zone][i] = days[zone][i];  // Save previous state
-        days[zone][i] = server.arg(dayArg) == "on";  // Update based on form input
-      } else {
-        Serial.println("Missing argument: " + dayArg);
+        String dayArg = "day" + String(zone) + "_" + String(i);
+        if (server.hasArg(dayArg)) {
+            prevDays[zone][i] = days[zone][i];  // Save previous state
+            days[zone][i] = true;              // Checkbox present, set `days` to true
+        } else {
+            prevDays[zone][i] = days[zone][i];  // Save previous state
+            days[zone][i] = false;             // Checkbox absent, set `days` to false
+        }
       }
-    }
-
-    // Validate and update start times
+      // Validate and update start times
     if (server.hasArg("startHour" + String(zone)) && server.hasArg("startMin" + String(zone))) {
       startHour[zone] = server.arg("startHour" + String(zone)).toInt();
       startMin[zone] = server.arg("startMin" + String(zone)).toInt();
@@ -835,7 +834,7 @@ void handleSetupPage() {
     html += "<form action='/configure' method='POST'>";
     html += "<label for='apiKey'>API Key:</label><br>";
     html += "<input type='text' id='apiKey' name='apiKey' value='" + existingApiKey + "'><br>";
-    html += "<label for='city'>City:</label><br>";
+    html += "<label for='city'>City Number:</label><br>";
     html += "<input type='text' id='city' name='city' value='" + existingCity + "'><br>";
     html += "<label for='dstOffset'>Time Zone Offset (hours):</label><br>";
     html += "<input type='number' id='dstOffset' name='dstOffset' min='-12' max='14' step='0.01' value='" + String(existingDstOffset, 2) + "'><br><br>";
@@ -870,51 +869,32 @@ void loadSchedule() {
   }
 
   for (int i = 0; i < numZones; i++) {
-    String line = file.readStringUntil('\n'); // Read the entire line
+    String line = file.readStringUntil('\n');
     if (line.length() > 0) {
-      int index = 0;
+        int index = 0;
 
-      startHour[i] = line.substring(index, line.indexOf(',', index)).toInt();
-      index = line.indexOf(',', index) + 1;
+        startHour[i] = line.substring(index, line.indexOf(',', index)).toInt();
+        index = line.indexOf(',', index) + 1;
 
-      startMin[i] = line.substring(index, line.indexOf(',', index)).toInt();
-      index = line.indexOf(',', index) + 1;
+        startMin[i] = line.substring(index, line.indexOf(',', index)).toInt();
+        index = line.indexOf(',', index) + 1;
 
-      startHour2[i] = line.substring(index, line.indexOf(',', index)).toInt();
-      index = line.indexOf(',', index) + 1;
+        startHour2[i] = line.substring(index, line.indexOf(',', index)).toInt();
+        index = line.indexOf(',', index) + 1;
 
-      startMin2[i] = line.substring(index, line.indexOf(',', index)).toInt();
-      index = line.indexOf(',', index) + 1;
+        startMin2[i] = line.substring(index, line.indexOf(',', index)).toInt();
+        index = line.indexOf(',', index) + 1;
 
-      duration[i] = line.substring(index, line.indexOf(',', index)).toInt();
-      index = line.indexOf(',', index) + 1;
+        duration[i] = line.substring(index, line.indexOf(',', index)).toInt();
+        index = line.indexOf(',', index) + 1;
 
-      enableStartTime[i] = line.substring(index, line.indexOf(',', index)).toInt() == 1;
-      index = line.indexOf(',', index) + 1;
-
-      enableStartTime2[i] = line.substring(index).toInt() == 1;
-
-      // Debugging Output
-      Serial.print("Zone ");
-      Serial.print(i + 1);
-      Serial.print(": Start1: ");
-      Serial.print(startHour[i]);
-      Serial.print(":");
-      Serial.print(startMin[i]);
-      Serial.print(", Start2: ");
-      Serial.print(startHour2[i]);
-      Serial.print(":");
-      Serial.print(startMin2[i]);
-      Serial.print(", Duration: ");
-      Serial.print(duration[i]);
-      Serial.print(" mins");
-      Serial.print(", Enable2: ");
-      Serial.println(enableStartTime2[i]);
-    } else {
-      Serial.print("Error: Missing data for zone ");
-      Serial.println(i + 1);
-    }
-  }
+        // Parse days array from file
+        for (int j = 0; j < 7; j++) {
+            days[i][j] = line.substring(index, line.indexOf(',', index)).toInt();
+            index = line.indexOf(',', index) + 1;
+        }
+     }
+ }
 
   file.close();
 }
@@ -937,22 +917,13 @@ void saveSchedule() {
     file.print(',');
     file.print(duration[i]);
     file.print(',');
-    file.print(enableStartTime[i] ? "1" : "0");
-    file.print(',');
-    file.print(enableStartTime2[i] ? "1" : "0");
-    file.print('\n');
-  }
 
-  // Debugging output to ensure data is saved correctly
-  Serial.println("Schedule saved:");
-  for (int i = 0; i < numZones; i++) {
-    Serial.print("Zone "); Serial.print(i + 1);
-    Serial.print(": Start1: "); Serial.print(startHour[i]); Serial.print(":");
-    Serial.print(startMin[i]);
-    Serial.print(", Start2: "); Serial.print(startHour2[i]); Serial.print(":");
-    Serial.print(startMin2[i]);
-    Serial.print(", Duration: "); Serial.print(duration[i]); Serial.print(" mins");
-    Serial.print(", Enable2: "); Serial.println(enableStartTime2[i]);
+    // Save days as a comma-separated string
+    for (int j = 0; j < 7; j++) {
+        file.print(days[i][j] ? "1" : "0");
+        if (j < 6) file.print(','); // Add commas between days, but not at the end
+    }
+    file.print('\n'); // End of the line for this zone
   }
 
   file.close();
@@ -979,11 +950,11 @@ void saveConfig(const char* apiKey, const char* city, int dstAdjustment) {
   configFile.println(dstAdjustment); // Save DST offset
   configFile.close();
 
-    lcd.backlight();
     lcd.clear();
+    lcd.backlight();
     lcd.setCursor(5, 0);
     lcd.print("SAVED :)");
-    delay(3000);
+    delay(1000);
     lcd.noBacklight();
 
   Serial.println("Configuration saved");
