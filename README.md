@@ -15,8 +15,6 @@ Values are stored in LittleFS and will remain if there is reset or power loss.
 
 3. At the bottom of the WEB User Interface Add these details:
 
-You will need an APIKEY that can be obtained for free at: (https://openweathermap.org/api)
-
 Enter your area details at the bottom Of WEB User Iterface EG: 
 
 CityID Number, eg. : "2078025"  
@@ -25,7 +23,7 @@ DST offset eg. : "-1" for daylight savings "0" for no daylight savings
 
 API KEY eg : "345e1asdfdeaabdc5adgs918a9cfsuaa" 
 
-APIKEY can be obtained for free at: (https://openweathermap.org/api)
+You will need an APIKEY that can be obtained for free at: (https://openweathermap.org/api)
 
 
 Wiring Diagram
