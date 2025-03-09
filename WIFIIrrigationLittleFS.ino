@@ -1,3 +1,7 @@
+//Im using a D1 R2 Uno style 8266 board. 
+//With some variance in boards this pinout may need changing
+//Rewriting to use i2c i/o expansion would make pinout easier
+
 #include <ArduinoJson.h>
 #include <ArduinoOTA.h>
 #include <DNSServer.h>
@@ -10,23 +14,23 @@
 #include <Wire.h>
 #include <LittleFS.h>
 
-const int valvePins[4] = {D0, D3, D5, D6}; // Pins for 4 solenoids
-const int ledPin = D4;                     // LED pin 
+// --- Global Pin Definitions ---
+const int valvePins[4] = {D0, D3, D5, D6}; // Pins for 4 solenoids 
 const int mainsSolenoidPin = D7;           // Mains solenoid pin (Optional)
 const int tankSolenoidPin = D8;            // Tank solenoid pin (Optional)
 const int tankLevelPin = A0;               // Analog pin for tank level sensor (Optional)
 
+// --- Global Objects ---
 LiquidCrystal_I2C lcd(0x27, 16, 2);
-
 WiFiManager wifiManager;
 ESP8266WebServer server(80);
 WiFiClient client;
 
+// --- Global Variables ---
 String newSsid;
 String newPassword;
 String apiKey;
 String city;
-
 float dstAdjustment;  
 
 unsigned long valveStartTime[4] = {0}; 
@@ -38,13 +42,17 @@ bool weatherCheckRequired = false;
 bool wifiConnected = false;
 bool rainDelayEnabled = true;  // Default: Rain delay enabled
 
+// --- NEW GLOBAL VARIABLES for wind Delayion ---
+float windSpeedThreshold = 5.0;      // Default wind speed threshold in m/s
+bool windCancelEnabled = false;      // Default: wind Delayion disabled
+
 String condition; 
 float temperature; 
 float humidity; 
 float windSpeed; 
 float rain; 
 unsigned long previousMillis = 0;   
-const long interval = 10000;    // 10-second LCD update interval (comment updated)
+const long interval = 10000;    // 10-second LCD update interval
 String cachedWeatherData = "";
 unsigned long lastWeatherUpdateTime = 0;
 const unsigned long weatherUpdateInterval = 3600000; // 1 hour in milliseconds
@@ -70,9 +78,6 @@ bool prevDays[4][7] = {
   {false, false, false, false, false, false, false}
 };
 
-//
-// Setup: Initialize hardware, WiFi, OTA, and time (via configTime)
-//
 void setup() {
   Serial.begin(115200);
   
@@ -81,10 +86,10 @@ void setup() {
     pinMode(valvePins[i], OUTPUT);
     digitalWrite(valvePins[i], LOW);
   }
-  pinMode(ledPin, LOW);
+  pinMode(ledPin, OUTPUT);
   digitalWrite(ledPin, HIGH);
 
-  // *** ADDED: Initialize solenoid source pins as outputs ***
+  // Initialize solenoid source pins as outputs
   pinMode(mainsSolenoidPin, OUTPUT);
   digitalWrite(mainsSolenoidPin, LOW);
   pinMode(tankSolenoidPin, OUTPUT);
@@ -161,12 +166,11 @@ void setup() {
   delay(3000); 
   lcd.noBacklight();
 
-  // --- Rewritten Section: Setup time using configTime ---
-  long timeOffsetSec = (long)(dstAdjustment * 3600);  // Convert hours to seconds
+  // --- Setup time using configTime ---
+  long timeOffsetSec = (long)(dstAdjustment * 3600);
   configTime(timeOffsetSec, 0, "pool.ntp.org", "time.nist.gov");
-  // Wait until time is set (roughly after a few seconds)
   time_t now = time(nullptr);
-  while(now < 1000000000) { // arbitrary threshold
+  while(now < 1000000000) {
     delay(500);
     now = time(nullptr);
   }
@@ -188,168 +192,142 @@ void setup() {
   server.begin();
 }
 
-//
-// Main loop: Handle OTA, HTTP requests, scheduling, and weather updates
-//
 void loop() {
   ArduinoOTA.handle();
   server.handleClient();
   unsigned long currentMillis = millis();
 
- bool valveActive = false;
- for (int i = 0; i < 4; i++) {
-  if (valveOn[i]) {              // Check if the valve is on for zone i
-    updateLCDForZone(i);         // Update the LCD for the active zone
-    valveActive = true;          // Mark that we found an active valve
-    break;                       // Exit after updating the first active valve
+  bool valveActive = false;
+  for (int i = 0; i < 4; i++) {
+    if (valveOn[i]) {
+      updateLCDForZone(i);
+      valveActive = true;
+      break;
+    }
   }
- }
 
- // If no valves are active, then check if it's time to update the weather info
- if (!valveActive) {
-  if (currentMillis - previousMillis >= interval) {
-    previousMillis = currentMillis; // Reset the timer
-    updateWeatherOnLCD();           // Update the weather info on the LCD
+  if (!valveActive) {
+    if (currentMillis - previousMillis >= interval) {
+      previousMillis = currentMillis;
+      updateDetailsOnLCD();
+    }
   }
- }
 
-  // Check watering schedule for each zone
   for (int i = 0; i < numZones; i++) {
     checkWateringSchedule(i);
     updateLCD();
   }
 
-  // Reconnect WiFi if needed
   if (WiFi.status() != WL_CONNECTED) {
     reconnectWiFi();
   }
+  
+  // --- Cancel watering if high wind is detected during an active cycle ---
+  cancelWateringForWind();
 }
 
-//
-// Check for rain by fetching weather data
-//
-bool checkForRain() {
-  // Bypass rain delay if it is disabled in the setup
-  if (!rainDelayEnabled) {
+bool checkForWind() {
+  if (!windCancelEnabled) {
     return false;
   }
-  
   updateCachedWeatherData();
-
   DynamicJsonDocument jsonResponse(1024);
   DeserializationError error = deserializeJson(jsonResponse, cachedWeatherData);
   if (error) {
-    Serial.println("Failed to parse weather data.");
+    Serial.println("Failed to parse weather data (wind check).");
     return false;
   }
+  float currentWindSpeed = jsonResponse["wind"]["speed"].as<float>();
+  Serial.print("Wind Speed: ");
+  Serial.println(currentWindSpeed);
+  if (currentWindSpeed >= windSpeedThreshold) {
+    Serial.println("High wind speed detected. Cancelling watering.");
+    displayWindCancelMessage();
+    return true;
+  }
+  return false;
+}
 
+void displayWindCancelMessage() {
+  for (int i = 0; i < numZones; i++) {
+    if (valveOn[i]) {
+      turnOffValve(i);
+      lcd.backlight();
+      lcd.clear();
+      lcd.setCursor(2, 0);
+      lcd.print("High Wind");
+      lcd.setCursor(1, 1);
+      lcd.print("Watering Off");
+      delay(60000); // Delay for 60 seconds (adjust as needed)
+      lcd.noBacklight();
+    }
+  }
+}
+
+void cancelWateringForWind() {
+  if (!windCancelEnabled) return;
+  updateCachedWeatherData();
+  DynamicJsonDocument jsonResponse(1024);
+  DeserializationError error = deserializeJson(jsonResponse, cachedWeatherData);
+  if (error) return;
+  float currentWindSpeed = jsonResponse["wind"]["speed"].as<float>();
+  if (currentWindSpeed >= windSpeedThreshold) {
+    Serial.println("High wind detected during watering. Cancelling all active watering.");
+    for (int i = 0; i < numZones; i++) {
+      if (valveOn[i]) {
+        turnOffValve(i);
+        valveOn[i] = false;
+      }
+    }
+    lcd.backlight();
+    lcd.clear();
+    lcd.setCursor(1, 0);
+    lcd.print("Wind Delay");
+    lcd.setCursor(0, 1);
+    lcd.print("All Water Off");
+    delay(60000);
+    lcd.noBacklight();
+  }
+}
+
+bool checkForRain() {
+  if (!rainDelayEnabled) {
+    return false;
+  }
+  updateCachedWeatherData();
+  DynamicJsonDocument jsonResponse(1024);
+  DeserializationError error = deserializeJson(jsonResponse, cachedWeatherData);
+  if (error) {
+    Serial.println("Failed to parse weather data (rain check).");
+    return false;
+  }
   String weatherCondition = jsonResponse["weather"][0]["main"].as<String>();
   Serial.print("Weather condition: ");
   Serial.println(weatherCondition);
-
-  bool isRaining = (weatherCondition.equalsIgnoreCase("Rain") || 
-                    weatherCondition.equalsIgnoreCase("Drizzle"));
-
-  // If it's raining and rain delay is enabled, display the rain message.
+  bool isRaining = (weatherCondition.equalsIgnoreCase("Rain") || weatherCondition.equalsIgnoreCase("Drizzle"));
   if (isRaining) {
     Serial.println("Rain delay active. Skipping watering.");
     displayRainMessage();
   }
-
   return isRaining;
 }
 
-
-//
-// Update LCD display if any valve is active
-//
-void updateLCD() {
-  for (int i = 0; i < 4; i++) {
+void displayRainMessage() { 
+  for (int i = 0; i < numZones; i++) {
     if (valveOn[i]) {
-      updateLCDForZone(i);
-      break;
-    }
+      turnOffValve(i);
+      lcd.backlight();
+      lcd.clear();
+      lcd.setCursor(4, 0);
+      lcd.print("Rain Delay");
+      lcd.setCursor(6, 1);
+      lcd.print("Enabled");
+      delay(60000); // Delay for 60 seconds
+      lcd.noBacklight();
+    }   
   }
 }
 
-//
-// Update weather information on the LCD
-//
-void updateWeatherOnLCD() {
-  // Ensure we have updated weather data based on our cache interval.
-  updateCachedWeatherData();
-
-  // Toggle display every 10 seconds.
-  static unsigned long lastToggleTime = 0;
-  static bool showWeatherScreen = true;
-  unsigned long currentMillis = millis();
-  if (currentMillis - lastToggleTime >= 10000) { // 10 seconds
-    lastToggleTime = currentMillis;
-    showWeatherScreen = !showWeatherScreen;
-  }
-
-  lcd.clear();
-  
-  if (showWeatherScreen) {
-    // --- Weather Screen ---
-    DynamicJsonDocument jsonResponse(1024);
-    DeserializationError error = deserializeJson(jsonResponse, cachedWeatherData);
-    if (!error) {
-      float temp = jsonResponse["main"]["temp"].as<float>();
-      int hum = jsonResponse["main"]["humidity"].as<int>();
-      String weatherCondition = jsonResponse["weather"][0]["main"].as<String>();
-      int textLength = weatherCondition.substring(0, 10).length();
-      int startPos = (textLength < 16) ? (16 - textLength) / 2 : 0;
-      lcd.setCursor(startPos, 0);
-      lcd.print(weatherCondition.substring(0, 10));
-      lcd.setCursor(0, 1);
-      lcd.print("Te:");
-      lcd.print(temp);
-      lcd.print("C Hu:");
-      lcd.print(hum);
-      lcd.print("%");
-    } else {
-      lcd.setCursor(0, 0);
-      lcd.print("Weather error");
-    }
-  } else {
-    // --- Time and Tank Level Screen ---
-    time_t nowTime = time(nullptr);
-    struct tm * timeInfo = localtime(&nowTime);
-    char timeStr[9]; // Format: HH:MM:SS
-    strftime(timeStr, sizeof(timeStr), "%H:%M", timeInfo);
-    
-    int tankLevel = analogRead(tankLevelPin);
-    
-    lcd.setCursor(6, 0);
-    lcd.print(timeStr);
-    lcd.setCursor(1, 1);
-    lcd.print("Tank Level: ");
-    lcd.print(tankLevel);
-    lcd.print("%");
-  }
-}
-
-//
-// Update global weather variables from JSON data
-//
-void updateWeatherVariables(const String& jsonData) {
-  DynamicJsonDocument jsonResponse(1024);
-  DeserializationError error = deserializeJson(jsonResponse, jsonData);
-  if (error) {
-    Serial.print("deserializeJson() failed: ");
-    Serial.println(error.c_str());
-    return;
-  }
-  temperature = jsonResponse["main"]["temp"].as<float>();
-  humidity = jsonResponse["main"]["humidity"].as<int>();
-  condition = jsonResponse["weather"][0]["main"].as<String>();
-  delay(1000);
-}
-
-//
-//Read .json from API address
-//
 String getWeatherData() {
   HTTPClient http;
   http.setTimeout(5000);
@@ -366,29 +344,6 @@ String getWeatherData() {
   return payload;
 }
 
-//
-// Rewritten Section: Display a "Raining" message on the LCD (Fixed version)
-//
-void displayRainMessage() { 
-  for (int i = 0; i < 4; i++) {
-    if (valveOn[i]) {
-        turnOffValve(i);
-        lcd.backlight();
-        lcd.clear();
-        lcd.setCursor(4, 0);
-        lcd.print("Rain Delay");
-        lcd.setCursor(6, 1);
-        lcd.print("Enabled");
-        delay(60000); // Delay for 60 seconds
-        lcd.noBacklight();
-    }   
-  }
-}
-
-//
-//cache for weather data for scrolling screen update every hour
-//
-
 void updateCachedWeatherData() {
   unsigned long currentMillis = millis();
   if (cachedWeatherData == "" || (currentMillis - lastWeatherUpdateTime >= weatherUpdateInterval)) {
@@ -397,9 +352,70 @@ void updateCachedWeatherData() {
   }
 }
 
-//
-// Update LCD for a specific zone with elapsed/remaining time
-//
+void updateDetailsOnLCD() {
+  updateCachedWeatherData();
+  static unsigned long lastToggleTime = 0;
+  static bool showWeatherScreen = true;
+  unsigned long currentMillis = millis();
+  if (currentMillis - lastToggleTime >= 10000) {
+    lastToggleTime = currentMillis;
+    showWeatherScreen = !showWeatherScreen;
+  }
+
+  lcd.clear();
+  
+  if (showWeatherScreen) {
+    DynamicJsonDocument jsonResponse(1024);
+    DeserializationError error = deserializeJson(jsonResponse, cachedWeatherData);
+    if (!error) {
+      float temp = jsonResponse["main"]["temp"].as<float>();
+      int hum = jsonResponse["main"]["humidity"].as<int>();
+      String weatherCondition = jsonResponse["weather"][0]["main"].as<String>();
+      int textLength = weatherCondition.substring(0, 10).length();
+      int startPos = (textLength < 16) ? (16 - textLength) / 2 : 0;
+      lcd.setCursor(startPos, 0);
+      lcd.print(weatherCondition.substring(0, 10));
+      lcd.setCursor(0, 1);
+      lcd.print("Te:");
+      lcd.print(temp, 1);
+      lcd.print("C  Hu:");
+      lcd.print(hum , 1);
+      lcd.print("%");
+    } else {
+      lcd.setCursor(0, 0);
+      lcd.print("Weather error");
+    }
+  } else {
+    // New display: wind speed, time, and tank level
+    // Get current time formatted as HH:MM:
+    time_t nowTime = time(nullptr);
+    struct tm * timeInfo = localtime(&nowTime);
+    char timeStr[6]; // Format: "HH:MM"
+    strftime(timeStr, sizeof(timeStr), "%H:%M", timeInfo);
+
+    // Read tank level and compute percentage
+    int tankRaw = analogRead(tankLevelPin);
+    int tankPercentage = map(tankRaw, 0, 1023, 0, 100);
+
+    // Retrieve wind speed from cached weather data:
+    DynamicJsonDocument jsonDoc(1024);
+    DeserializationError error = deserializeJson(jsonDoc, cachedWeatherData);
+    float currentWind = 0.0;
+    if (!error) {
+      currentWind = jsonDoc["wind"]["speed"].as<float>();
+    }
+
+    String line2 = String(timeStr);
+    String line1 = "Ta:" + String(tankPercentage) + "% " + " Wind:" + String(currentWind, 2);
+
+    lcd.clear();
+    lcd.setCursor(0, 1);
+    lcd.print(line1);
+    lcd.setCursor(5, 0);
+    lcd.print(line2);
+  }
+}
+
 void updateLCDForZone(int zone) {
   static unsigned long lastUpdate = 0;
   unsigned long currentTime = millis();
@@ -428,15 +444,35 @@ void updateLCDForZone(int zone) {
   }
 }
 
-//
-// Check the watering schedule for a given zone using the current time
-//
+void updateLCD() {
+  for (int i = 0; i < 4; i++) {
+    if (valveOn[i]) {
+      updateLCDForZone(i);
+      break;
+    }
+  }
+}
+
+void updateWeatherVariables(const String& jsonData) {
+  DynamicJsonDocument jsonResponse(1024);
+  DeserializationError error = deserializeJson(jsonResponse, jsonData);
+  if (error) {
+    Serial.print("deserializeJson() failed: ");
+    Serial.println(error.c_str());
+    return;
+  }
+  temperature = jsonResponse["main"]["temp"].as<float>();
+  humidity = jsonResponse["main"]["humidity"].as<int>();
+  condition = jsonResponse["weather"][0]["main"].as<String>();
+  delay(1000);
+}
+
 void checkWateringSchedule(int zone) {
-  loadSchedule();  // Reload schedule in case of changes
+  loadSchedule();
   
   time_t now = time(nullptr);
   struct tm *timeinfo = localtime(&now);
-  int currentDay = timeinfo->tm_wday;   // 0 = Sunday, 1 = Monday, etc.
+  int currentDay = timeinfo->tm_wday;
   int currentHour = timeinfo->tm_hour;
   int currentMin = timeinfo->tm_min;
   
@@ -447,7 +483,11 @@ void checkWateringSchedule(int zone) {
       } else {
         if (checkForRain()) {
           Serial.println("It's raining. Valve will not be turned on.");
-          displayRainMessage();
+          // displayRainMessage() already called in checkForRain()
+          return;
+        }
+        if (checkForWind()) {
+          Serial.println("High wind speed. Valve will not be turned on.");
           return;
         }
       }
@@ -463,9 +503,6 @@ void checkWateringSchedule(int zone) {
   }
 }
 
-//
-// Decide if watering should occur based on the schedule and days enabled
-//
 bool shallWater(int zone, int currentDay, int currentHour, int currentMin) {
   if (days[zone][currentDay]) {
     if (currentHour == startHour[zone] && currentMin == startMin[zone]) {
@@ -480,23 +517,17 @@ bool shallWater(int zone, int currentDay, int currentHour, int currentMin) {
   return false;
 }
 
-//
-// Check if the water tank level is low
-//
 bool isTankLevelLow() {
   int tankLevel = analogRead(tankLevelPin);
   Serial.print("Tank level: ");
   Serial.println(tankLevel);
-  int threshold = 500;  // Adjust based on sensor calibration
+  int threshold = 500;
   return tankLevel < threshold;
 }
 
-//
-// Turn on a valve for a given zone (non-blocking version)
-//
 void turnOnValve(int zone) {
   lcd.clear();
-  digitalWrite(valvePins[zone], HIGH);  // Turn on the valve
+  digitalWrite(valvePins[zone], HIGH);
   valveStartTime[zone] = millis();
   lcd.backlight();
   lcd.setCursor(0, 0);
@@ -506,7 +537,6 @@ void turnOnValve(int zone) {
   delay(2000);
   lcd.clear();
   
-  // Determine water source based on tank level
   if (isTankLevelLow()) {
     digitalWrite(mainsSolenoidPin, HIGH);
     lcd.setCursor(0, 1);
@@ -518,20 +548,15 @@ void turnOnValve(int zone) {
   }
   delay(2000);
   lcd.clear();
+  updateLCDForZone(zone);
 }
 
-//
-// Determine if the watering duration for a zone has completed
-//
 bool hasDurationCompleted(int zone) {
   unsigned long elapsed = (millis() - valveStartTime[zone]) / 1000;
   unsigned long totalDuration = duration[zone] * 60;
   return (elapsed >= totalDuration);
 }
 
-//
-// Manual control: Turn on valve for a given zone via HTTP request
-//
 void turnOnValveManual(int zone) {
   digitalWrite(valvePins[zone], HIGH);
   valveStartTime[zone] = millis();
@@ -541,7 +566,6 @@ void turnOnValveManual(int zone) {
   lcd.print("Valve ");
   lcd.print(zone + 1);
   lcd.print(" On");
-  // *** Added water source selection similar to scheduled function ***
   if (isTankLevelLow()) {
     digitalWrite(mainsSolenoidPin, HIGH);
     lcd.setCursor(0, 1);
@@ -554,11 +578,8 @@ void turnOnValveManual(int zone) {
   server.send(200, "text/plain", "Valve " + String(zone + 1) + " turned on");       
 }
 
-
-// Turn off a valve for a given zone (scheduled version)
 void turnOffValve(int zone) {
   digitalWrite(valvePins[zone], LOW);
-  // *** Ensure water source solenoids are turned off ***
   digitalWrite(mainsSolenoidPin, LOW);
   digitalWrite(tankSolenoidPin, LOW);
   lcd.clear();
@@ -570,7 +591,6 @@ void turnOffValve(int zone) {
   delay(1000);
   lcd.clear();
 
-  // Update weather info on LCD after turning off the valve
   String weatherData = getWeatherData();
   DynamicJsonDocument jsonResponse(1024);
   deserializeJson(jsonResponse, weatherData);
@@ -591,37 +611,22 @@ void turnOffValve(int zone) {
   lcd.noBacklight();
 }
 
-
-
-// Manual control: Turn off valve for a given zone via HTTP request
 void turnOffValveManual(int zone) {
-  // Turn off the valve and water source solenoids
   digitalWrite(valvePins[zone], LOW);
   digitalWrite(mainsSolenoidPin, LOW);
   digitalWrite(tankSolenoidPin, LOW);
-
-  // *** NEW: Stop the timer for this zone by resetting its flag and timer start ***
   valveOn[zone] = false;
-
-  // Update LCD and send HTTP response
   lcd.clear(); 
   lcd.setCursor(3, 0);
   lcd.print("Valve ");
   lcd.print(zone + 1);
   lcd.print(" Off");
   server.send(200, "text/plain", "Valve " + String(zone + 1) + " turned off");
-
   delay(1200);
   lcd.noBacklight();
-
-  // Return to normal loop display (weather info, etc.)
-  updateWeatherOnLCD();
+  updateDetailsOnLCD();
 }
 
-
-//
-// Turn off all valves (used when rain is detected)
-//
 void turnOffAllValves() {
   for (int i = 0; i < 4; i++) {
     if (valveOn[i]) {
@@ -631,9 +636,6 @@ void turnOffAllValves() {
   }
 }
 
-//
-// Return the day name for a given index (0 = Sunday)
-//
 String getDayName(int dayIndex) {
   const char* daysOfWeek[] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
   if (dayIndex >= 0 && dayIndex < 7) {
@@ -642,21 +644,15 @@ String getDayName(int dayIndex) {
   return "Invalid Day";
 }
 
-//
-// Fetch weather data from OpenWeatherMap
-//
 void handleRoot() {
-  // Get current time as a formatted string
   time_t now = time(nullptr);
   struct tm *timeinfo = localtime(&now);
   char timeStr[9];
   strftime(timeStr, sizeof(timeStr), "%H:%M:%S", timeinfo);
   String currentTime = String(timeStr);
   
-  // Load schedule settings
   loadSchedule();
   
-  // Fetch weather data and parse JSON response
   String weatherData = getWeatherData();
   DynamicJsonDocument jsonResponse(1024);
   deserializeJson(jsonResponse, weatherData);
@@ -666,12 +662,6 @@ void handleRoot() {
   String cond = jsonResponse["weather"][0]["main"];
   String cityName = jsonResponse["name"];
 
-  // Read tank level and compute percentage/status
-  int tankRaw = analogRead(tankLevelPin);
-  int tankPercentage = map(tankRaw, 0, 1023, 0, 100);
-  String tankStatus = (tankRaw < 250) ? "Low" : "Normal";
-  
-  // Update LCD when WiFi is connected
   if (WiFi.status() == WL_CONNECTED) {
     lcd.clear();
     int textLength = cond.substring(0, 10).length();
@@ -726,9 +716,11 @@ void handleRoot() {
   html += "<p id='temperature'>Temperature: " + String(temp) + " &#8451;</p>";
   html += "<p id='humidity'>Humidity: " + String(int(hum)) + " %</p>";
   html += "<p id='wind-speed'>Wind Speed: " + String(ws) + " m/s</p>";
-  html += "<p>Tank Level: <progress id='tankLevel' value='" + String(tankPercentage) + "' max='100'></progress>" + String(tankPercentage) + "% (" + tankStatus + ")</p>";
+  int tankRaw = analogRead(tankLevelPin);
+  int tankPercentage = map(tankRaw, 0, 1023, 0, 100);
+  String tankStatus = (tankRaw < 250) ? "Low - Using Main" : "Normal - Using Tank";
+  html += "<p>Tank Level: <progress id='tankLevel' value='" +  String(tankPercentage) + "' max='100'></progress>" + String(tankPercentage) + "% (" + tankStatus + ")</p>";
 
-  // Existing JS for clock and weather updates
   html += "<script>";
   html += "function updateClock() {";
   html += "  var now = new Date();";
@@ -744,10 +736,9 @@ void handleRoot() {
   html += "    document.getElementById('humidity').textContent = 'Humidity: ' + data.humidity + ' %';";
   html += "    document.getElementById('wind-speed').textContent = 'Wind Speed: ' + data.windSpeed + ' m/s';";
   html += "  }).catch(error => console.error('Error fetching weather data:', error));";
-  html += "} setInterval(fetchWeatherData, 60000);"; // Fetch weather data every 60 seconds
+  html += "} setInterval(fetchWeatherData, 60000);";
   html += "</script>";
   
-  // Form with schedule controls and manual valve buttons
   html += "<form action='/submit' method='POST'>";
   for (int zone = 0; zone < numZones; zone++) {
     html += "<div class='zone-container'>";
@@ -763,7 +754,6 @@ void handleRoot() {
     }
     html += "</div>";
 
-    // First Start Time and Duration
     html += "<div class='time-duration-container'>";
     html += "<div class='time-input'>";
     html += "<label for='startHour" + String(zone) + "'>Start Time 1:</label>";
@@ -776,7 +766,6 @@ void handleRoot() {
     html += "</div>";
     html += "</div>";
 
-    // Second Start Time and Enable checkbox
     html += "<div class='time-duration-container'>";
     html += "<div class='time-input'>";
     html += "<label for='startHour2" + String(zone) + "'>Start Time 2:</label>";
@@ -789,21 +778,20 @@ void handleRoot() {
     html += "</div>";
     html += "</div>";
 
-    // Manual control buttons for each zone
     html += "<div class='manual-control-container'>";
     html += "<button type='button' class='turn-on-btn' data-zone='" + String(zone) + "'>Turn On</button>";
     html += "<button type='button' class='turn-off-btn' data-zone='" + String(zone) + "' disabled>Turn Off</button>";
     html += "</div>";
 
-    html += "</div>"; // Close zone container
+    html += "</div>";
   }
   
   html += "<button type='submit'>Update Schedule</button>";
   html += "</form>";
-  html += "<p style='text-align: center;'>Click <a href='/setup'>HERE</a> to enter API key, City, and Time Zone offset.</p>";
-  html += "<p style='text-align: center;'><a href='https://openweathermap.org/city/" +city+ "' target='_blank'>View Weather Details on OpenWeatherMap</a></p>";
+  html += "<p style='text-align: center;'>Click <a href='/setup'>HERE</a> to enter API key, City, Time Zone offset, and Wind Settings.</p>";
+  html += "<p style='text-align: center;'><a href='https://openweathermap.org/city/" + city + "' target='_blank'>View Weather Details on OpenWeatherMap</a></p>";
 
-  // --- Added: JavaScript for Manual Control Button Actions ---
+    
   html += "<script>";
   html += "document.addEventListener('DOMContentLoaded', function() {";
   html += "  var turnOnButtons = document.querySelectorAll('.turn-on-btn');";
@@ -842,15 +830,9 @@ void handleRoot() {
   html += "</script>";
   
   html += "</div></body></html>";
-
   server.send(200, "text/html", html);
 }
 
-
-
-//
-// Process schedule and configuration updates from the HTTP form submission
-//
 void handleSubmit() {
   for (int zone = 0; zone < numZones; zone++) {
     for (int i = 0; i < 7; i++) {
@@ -900,50 +882,72 @@ void handleSubmit() {
   Serial.println("Redirecting to root page.");
 }
 
-//
-// Display the setup page for entering API key, city, and time zone offset
-//
 void handleSetupPage() {
   String html = "<!DOCTYPE html><html lang='en'><head>";
-      html += "<meta charset='UTF-8'>";
-      html += "<meta name='viewport' content='width=device-width, initial-scale=1.0'>";
-      html += "<title>Setup</title>";
-      html += "<link href='https://fonts.googleapis.com/css?family=Roboto:400,500&display=swap' rel='stylesheet'>";
-      html += "<style>";
-      html += "body { font-family: 'Roboto', sans-serif; background: #f7f9fc; margin: 0; padding: 0; display: flex; align-items: center; justify-content: center; height: 100vh; }";
-      html += "form { background: #ffffff; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }";
-      html += "h1 { text-align: center; color: #333333; margin-bottom: 20px; }";
-      html += "label { display: block; margin-bottom: 5px; color: #555555; }";
-      html += "input[type='text'], input[type='number'], select { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #cccccc; border-radius: 5px; font-size: 14px; }";
-      html += "input[type='checkbox'] { margin-right: 10px; }";
-      html += "input[type='submit'] { width: 100%; padding: 10px; background: #007BFF; border: none; border-radius: 5px; color: #ffffff; font-size: 16px; cursor: pointer; }";
-      html += "input[type='submit']:hover { background: #0056b3; }";
-      html += "</style>";
-      html += "</head><body>";
-      html += "<form action='/configure' method='POST'>";
-      html += "<h1>Setup</h1>";
-      html += "<label for='apiKey'>API Key:</label>";
-      html += "<input type='text' id='apiKey' name='apiKey' value='" + apiKey + "'>";
-      html += "<label for='city'>City Number:</label>";
-      html += "<input type='text' id='city' name='city' value='" + city + "'>";
-      html += "<label for='timezone'>City Timezone Offset (hours):</label>";
-      html += "<input type='number' id='timezone' name='timezone' min='-12' max='14' step='0.50' value='" + String(dstAdjustment) + "'>";
-      html += "<label for='dstEnabled'>Daylight Saving Time:</label>";
-      html += "<select id='dstEnabled' name='dstEnabled'>";
-      html += "<option value='yes'>Yes</option>";
-      html += "<option value='no' selected>No</option>";
-      html += "</select>";
-      html += "<label for='rainDelay'><input type='checkbox' id='rainDelay' name='rainDelay' " + String(rainDelayEnabled ? "checked" : "") + "> Enable Rain Delay</label>";
-      html += "<input type='submit' value='Submit'>";
-      html += "<p style='text-align: center;'><a href='https://openweathermap.org/city/" +city+ "' target='_blank'>View Weather Details on OpenWeatherMap</a></p>";
-      html += "</form>";
-      html += "</body></html>";
+  html += "<meta charset='UTF-8'>";
+  html += "<meta name='viewport' content='width=device-width, initial-scale=1.0'>";
+  html += "<title>Setup</title>";
+  html += "<link href='https://fonts.googleapis.com/css?family=Roboto:400,500&display=swap' rel='stylesheet'>";
+  html += "<style>";
+  html += "body { font-family: 'Roboto', sans-serif; background: #f7f9fc; margin: 0; padding: 0; display: flex; align-items: center; justify-content: center; height: 100vh; }";
+  html += "form { background: #ffffff; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }";
+  html += "h1 { text-align: center; color: #333333; margin-bottom: 20px; }";
+  html += "label { display: block; margin-bottom: 5px; color: #555555; }";
+  html += "input[type='text'], input[type='number'], select { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #cccccc; border-radius: 5px; font-size: 14px; }";
+  html += "input[type='checkbox'] { margin-right: 10px; }";
+  html += "input[type='submit'] { width: 100%; padding: 10px; background: #007BFF; border: none; border-radius: 5px; color: #ffffff; font-size: 16px; cursor: pointer; }";
+  html += "input[type='submit']:hover { background: #0056b3; }";
+  html += "</style>";
+  html += "</head><body>";
+  html += "<form action='/configure' method='POST'>";
+  html += "<h1>Setup</h1>";
+  html += "<label for='apiKey'>API Key:</label>";
+  html += "<input type='text' id='apiKey' name='apiKey' value='" + apiKey + "'>";
+  html += "<label for='city'>City Number:</label>";
+  html += "<input type='text' id='city' name='city' value='" + city + "'>";
+  html += "<label for='timezone'>City Timezone Offset (hours):</label>";
+  html += "<input type='number' id='timezone' name='dstOffset' min='-12' max='14' step='0.50' value='" + String(dstAdjustment) + "'>";
+  html += "<label for='dstEnabled'>Daylight Saving Time:</label>";
+  html += "<select id='dstEnabled' name='dstEnabled'>";
+  html += "<option value='yes'>Yes</option>";
+  html += "<option value='no' selected>No</option>";
+  html += "</select>";
+  html += "<label for='windSpeedThreshold'>Wind Speed Threshold (m/s):</label>";
+  html += "<input type='number' id='windSpeedThreshold' name='windSpeedThreshold' min='0' step='0.1' value='" + String(windSpeedThreshold) + "'>";
+  html += String("<label for='windCancelEnabled'><input type='checkbox' id='windCancelEnabled' name='windCancelEnabled'") + (windCancelEnabled ? " checked" : "") + "> Enable Wind Delay</label>";
+  html += "<label for='rainDelay'><input type='checkbox' id='rainDelay' name='rainDelay' " + String(rainDelayEnabled ? "checked" : "") + "> Enable Rain Delay</label>";
+  html += "<input type='submit' value='Submit'>";
+  html += "<p style='text-align: center;'><a href='https://openweathermap.org/city/" + city + "' target='_blank'>View Weather Details on OpenWeatherMap</a></p>";
+  html += "</form>";
+  html += "</body></html>";
   server.send(200, "text/html", html);
 }
 
-//
-// Reconnect WiFi if disconnected
-//
+void handleConfigure() {
+  apiKey = server.arg("apiKey");
+  city = server.arg("city");
+  float baseTimezone = server.arg("dstOffset").toFloat();
+  String dstChoice = server.arg("dstEnabled");
+  float overallOffset = baseTimezone + ((dstChoice == "yes") ? 1.0 : 0.0);
+  bool rainDelayOption = server.hasArg("rainDelay");
+  
+  // --- Process wind configuration ---
+  if (server.hasArg("windSpeedThreshold")) {
+    windSpeedThreshold = server.arg("windSpeedThreshold").toFloat();
+  } else {
+    windSpeedThreshold = 5.0;
+  }
+  windCancelEnabled = server.hasArg("windCancelEnabled");
+
+  dstAdjustment = overallOffset;
+  rainDelayEnabled = rainDelayOption;
+  
+  saveConfig(apiKey.c_str(), city.c_str(), overallOffset);
+  
+  server.sendHeader("Location", "/", true);
+  server.send(302, "text/plain", "");
+}
+
 void reconnectWiFi() {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("Reconnecting to WiFi...");
@@ -959,9 +963,6 @@ void reconnectWiFi() {
   }
 }
 
-//
-// Load watering schedule from LittleFS
-//
 void loadSchedule() {
   File file = LittleFS.open("/schedule.txt", "r");
   if (!file) {
@@ -972,29 +973,19 @@ void loadSchedule() {
     String line = file.readStringUntil('\n');
     if (line.length() > 0) {
       int index = 0;
-      // Read first start time (hour and minute)
       startHour[i] = line.substring(index, line.indexOf(',', index)).toInt();
       index = line.indexOf(',', index) + 1;
       startMin[i] = line.substring(index, line.indexOf(',', index)).toInt();
       index = line.indexOf(',', index) + 1;
-      
-      // Read second start time (hour and minute)
       startHour2[i] = line.substring(index, line.indexOf(',', index)).toInt();
       index = line.indexOf(',', index) + 1;
       startMin2[i] = line.substring(index, line.indexOf(',', index)).toInt();
       index = line.indexOf(',', index) + 1;
-      
-      // Read duration (in minutes)
       duration[i] = line.substring(index, line.indexOf(',', index)).toInt();
       index = line.indexOf(',', index) + 1;
-      
-      // Read enable/disable flag for Start Time 2 (1 = enabled, 0 = disabled)
       enableStartTime2[i] = (line.substring(index, line.indexOf(',', index)).toInt() == 1);
       index = line.indexOf(',', index) + 1;
-      
-      // Read the 7 day flags
       for (int j = 0; j < 7; j++) {
-        // For the last value, use '\n' as delimiter; otherwise, use ','
         char delim = (j < 6) ? ',' : '\n';
         String dayVal = line.substring(index, line.indexOf(delim, index));
         days[i][j] = (dayVal.toInt() == 1);
@@ -1005,9 +996,6 @@ void loadSchedule() {
   file.close();
 }
 
-//
-// Save the watering schedule (including enableStartTime2) to LittleFS
-//
 void saveSchedule() {
   File file = LittleFS.open("/schedule.txt", "w");
   if (!file) {
@@ -1015,7 +1003,6 @@ void saveSchedule() {
     return;
   }
   for (int i = 0; i < numZones; i++) {
-    // Save first start time, second start time, duration, and enable flag for Start Time 2
     file.print(startHour[i]);
     file.print(',');
     file.print(startMin[i]);
@@ -1028,8 +1015,6 @@ void saveSchedule() {
     file.print(',');
     file.print(enableStartTime2[i] ? "1" : "0");
     file.print(',');
-    
-    // Save each day's enabled flag (1 = enabled, 0 = disabled)
     for (int j = 0; j < 7; j++) {
       file.print(days[i][j] ? "1" : "0");
       if (j < 6)
@@ -1039,7 +1024,6 @@ void saveSchedule() {
   }
   file.close();
   
-  // Provide LCD feedback that schedule was saved
   lcd.backlight();
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -1050,9 +1034,6 @@ void saveSchedule() {
   lcd.noBacklight();
 }
 
-//
-// Save configuration (API key, city, and time offset) to LittleFS
-//
 void saveConfig(const char* apiKey, const char* city, float dstOffsetHours) {
   File configFile = LittleFS.open("/config.txt", "w");
   if (!configFile) {
@@ -1061,8 +1042,11 @@ void saveConfig(const char* apiKey, const char* city, float dstOffsetHours) {
   }
   configFile.println(apiKey);
   configFile.println(city);
-  configFile.println(dstAdjustment, 2); // Save DST offset (in hours)
-  configFile.println(rainDelayEnabled ? "1" : "0"); // Save rain delay setting (1 = enabled, 0 = disabled)
+  configFile.println(dstAdjustment, 2);
+  configFile.println(rainDelayEnabled ? "1" : "0");
+  // --- Save wind configuration ---
+  configFile.println(windSpeedThreshold, 1);
+  configFile.println(windCancelEnabled ? "1" : "0");
   configFile.close();
 
   lcd.clear();
@@ -1076,9 +1060,6 @@ void saveConfig(const char* apiKey, const char* city, float dstOffsetHours) {
   dstAdjustment = dstOffsetHours;
 }
 
-//
-// Load configuration (API key, city, and time offset) to LittleFS
-//
 void loadConfig() {
   File configFile = LittleFS.open("/config.txt", "r");
   if (!configFile) {
@@ -1090,13 +1071,24 @@ void loadConfig() {
   city = configFile.readStringUntil('\n');
   city.trim();
   dstAdjustment = configFile.readStringUntil('\n').toFloat();
-  
-  // Attempt to read rain delay setting; default to true if not found
   String rainDelayLine = configFile.readStringUntil('\n');
   if (rainDelayLine.length() > 0) {
     rainDelayEnabled = (rainDelayLine.toInt() == 1);
   } else {
     rainDelayEnabled = true;
+  }
+  // --- Load wind configuration if available ---
+  String windSpeedLine = configFile.readStringUntil('\n');
+  if (windSpeedLine.length() > 0) {
+    windSpeedThreshold = windSpeedLine.toFloat();
+  } else {
+    windSpeedThreshold = 5.0;
+  }
+  String windCancelLine = configFile.readStringUntil('\n');
+  if (windCancelLine.length() > 0) {
+    windCancelEnabled = (windCancelLine.toInt() == 1);
+  } else {
+    windCancelEnabled = false;
   }
   configFile.close();
 
@@ -1109,40 +1101,12 @@ void loadConfig() {
   Serial.println(dstAdjustment);
   Serial.print("Rain Delay Enabled: ");
   Serial.println(rainDelayEnabled ? "Yes" : "No");
+  Serial.print("Wind Speed Threshold: ");
+  Serial.println(windSpeedThreshold);
+  Serial.print("Wind Delayabled: ");
+  Serial.println(windCancelEnabled ? "Yes" : "No");
 }
 
-//
-// Handle configuration form submission
-//
-void handleConfigure() {
-  // Retrieve API key and city from the form
-  apiKey = server.arg("apiKey");
-  city = server.arg("city");
-
-  // Retrieve the base timezone offset (in hours)
-  float baseTimezone = server.arg("timezone").toFloat();
-
-  // Retrieve the DST choice ("yes" or "no")
-  String dstChoice = server.arg("dstEnabled");
-  
-  // Calculate the overall offset:
-  // If DST is enabled, add 1 hour to the base timezone offset.
-  float overallOffset = baseTimezone + ((dstChoice == "yes") ? 1.0 : 0.0);
-
-  // Retrieve rain delay option: if the checkbox is present, rain delay is enabled.
-  bool rainDelayOption = server.hasArg("rainDelay");
-  
-  // Update global settings
-  dstAdjustment = overallOffset;
-  rainDelayEnabled = rainDelayOption;
-  
-  // Save the configuration
-  saveConfig(apiKey.c_str(), city.c_str(), overallOffset);
-  
-  // Redirect back to the root page
-  server.sendHeader("Location", "/", true);
-  server.send(302, "text/plain", "");
-}
 
 
 
