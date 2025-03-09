@@ -1,30 +1,38 @@
 Irrigation Controller For ESP8266
 -----------------------------------
-The controller can be set up with a watering schedule, it can check the local weather forecast
-to determine if it should turn on or not. It also includes features i2c 16x2 LCD screen to display weather, 
-runtime duration, rain staus and Local IP. Access WEB UI In the address bar of the web browser,
+The controller can be set up with a watering schedule, days and two start times, it can check openweathermap.org for rain and windspeep
+to determine if it should turn on or not. It also includes the very affordable i2c 16x2 LCD screen to display weather, 
+runtime duration, tank level and Local IP. Access WEB UI In the address bar of the web browser,
 type in Local IP address displayed on the LCD on start up.
-Add a 1N4007 or diode between + and - terminals on the solenoids to prevent flyback voltage that will crash the esp8266.
-Values are stored in LittleFS and will remain if there is reset or power loss. 
+
+**Add a 1N4007 or diode between + and - terminals on the solenoids to prevent flyback voltage that will crash the esp8266. 
 
 --Initial Setup--
 
-1. Connect to ESPIrrigationAP in WiFi list with phone or computer WiFi. Enter Your Wifi router Username and Password Details.
+Connect to WiFi:
 
-2. Use a browser and enter IP ADDRESS in browser address bar displayed when powering up.
+1. From your phone or computer, connect to the WiFi network named "ESPIrrigationAP".
+Enter your home WiFi router’s username and password as prompted.
 
-3. At the bottom of the WEB User Interface Add these details:
+2. Access the Web UI:
 
-Enter your area details at the bottom Of WEB User Iterface EG: 
+Open a web browser and type in the IP address displayed on the LCD during startup
+you may need to restart to see it after youve entered your router details.
+Enter Your Area Details:
 
-CityID Number, eg. : "2078025"  
+At the bottom of the web interface in the setup section, input the following:
+City ID Number from openweathermap.org: eg, "2078025".
+Add your citys TimeZone eg, "9.5".
+For daylight savings use "Yes", or "No" if no daylight savings is applicable it adds an hour to your timezone if yes.
+API Key: Enter your OpenWeatherMap API key (get a free key from OpenWeatherMap.org).
+Once these details are submitted reset again, 
+The controller will use your area settings to obtain up-to-date weather information and adjust the watering schedule accordingly. 
 
-DST offset eg. : "-1" for daylight savings "0" for no daylight savings
-
-API KEY eg : "345e1asdfdeaabdc5adgs918a9cfsuaa" 
-
-You will need an APIKEY that can be obtained for free at: (https://openweathermap.org/api)
-
+Scheduled Watering: Set up a watering schedule to automatically activate solenoid valves at predetermined times.
+Weather Integration: The controller checks local weather conditions via the OpenWeatherMap API to decide whether to water or skip a cycle—helping to prevent overwatering during rain or high wind conditions.
+LCD Display: A built-in I2C 16×2 LCD screen shows real-time weather information, runtime duration, rain status, and the local IP address.
+Web User Interface: Easily access and manage the system through a web UI. Simply type the local IP address (displayed on the LCD at startup) into your web browser.
+Data Persistence: All configuration settings (schedule, weather parameters, etc.) are stored in LittleFS, ensuring they remain intact even after a reset or power loss.
 
 Wiring Diagram
 ![wiring diag](https://github.com/numerik11/Irrigation-Controller-ESP8266/assets/72150418/e8b8f33b-ee8f-476f-b984-d1b4457ea578)
