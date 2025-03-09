@@ -22,8 +22,6 @@ WiFiManager wifiManager;
 ESP8266WebServer server(80);
 WiFiClient client;
 
-String newSsid;
-String newPassword;
 String apiKey;
 String city;
 
@@ -44,7 +42,7 @@ float humidity;
 float windSpeed; 
 float rain; 
 unsigned long previousMillis = 0;   
-const long interval = 10000;    // 1-hour update interval
+const long interval = 10000;    // 10-second LCD update interval (comment updated)
 String cachedWeatherData = "";
 unsigned long lastWeatherUpdateTime = 0;
 const unsigned long weatherUpdateInterval = 3600000; // 1 hour in milliseconds
@@ -81,8 +79,14 @@ void setup() {
     pinMode(valvePins[i], OUTPUT);
     digitalWrite(valvePins[i], LOW);
   }
-  pinMode(ledPin, OUTPUT);
+  pinMode(ledPin, LOW);
   digitalWrite(ledPin, HIGH);
+
+  // *** ADDED: Initialize solenoid source pins as outputs ***
+  pinMode(mainsSolenoidPin, OUTPUT);
+  digitalWrite(mainsSolenoidPin, LOW);
+  pinMode(tankSolenoidPin, OUTPUT);
+  digitalWrite(tankSolenoidPin, LOW);
 
   // Initialize LCD
   lcd.init();
@@ -190,23 +194,27 @@ void loop() {
   server.handleClient();
   unsigned long currentMillis = millis();
 
-  // Update weather info and LCD every hour
-  if (currentMillis - previousMillis >= interval) {
-    previousMillis = currentMillis;
-    updateWeatherOnLCD();    
+ bool valveActive = false;
+ for (int i = 0; i < 4; i++) {
+  if (valveOn[i]) {              // Check if the valve is on for zone i
+    updateLCDForZone(i);         // Update the LCD for the active zone
+    valveActive = true;          // Mark that we found an active valve
+    break;                       // Exit after updating the first active valve
   }
+ }
+
+ // If no valves are active, then check if it's time to update the weather info
+ if (!valveActive) {
+  if (currentMillis - previousMillis >= interval) {
+    previousMillis = currentMillis; // Reset the timer
+    updateWeatherOnLCD();           // Update the weather info on the LCD
+  }
+ }
 
   // Check watering schedule for each zone
   for (int i = 0; i < numZones; i++) {
     checkWateringSchedule(i);
     updateLCD();
-  }
-
-  // If rain is detected, turn off all valves
-  if (weatherCheckRequired && checkForRain()) {
-    turnOffAllValves();
-    displayRainMessage();
-    weatherCheckRequired = false;
   }
 
   // Reconnect WiFi if needed
@@ -219,12 +227,11 @@ void loop() {
 // Check for rain by fetching weather data
 //
 bool checkForRain() {
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi is not connected. Weather check failed.");
+  // Bypass rain delay if it is disabled in the setup
+  if (!rainDelayEnabled) {
     return false;
   }
-
-  // Update cached weather data if needed.
+  
   updateCachedWeatherData();
 
   DynamicJsonDocument jsonResponse(1024);
@@ -237,19 +244,18 @@ bool checkForRain() {
   String weatherCondition = jsonResponse["weather"][0]["main"].as<String>();
   Serial.print("Weather condition: ");
   Serial.println(weatherCondition);
-  
+
   bool isRaining = (weatherCondition.equalsIgnoreCase("Rain") || 
                     weatherCondition.equalsIgnoreCase("Drizzle"));
 
-  // If rain delay is enabled and it's raining, display a rain message.
-  if (rainDelayEnabled && isRaining) {
+  // If it's raining and rain delay is enabled, display the rain message.
+  if (isRaining) {
     Serial.println("Rain delay active. Skipping watering.");
     displayRainMessage();
   }
 
   return isRaining;
 }
-
 
 //
 // Update LCD display if any valve is active
@@ -274,7 +280,7 @@ void updateWeatherOnLCD() {
   static unsigned long lastToggleTime = 0;
   static bool showWeatherScreen = true;
   unsigned long currentMillis = millis();
-  if (currentMillis - lastToggleTime >= 10000) { // 10,000 ms = 10 seconds
+  if (currentMillis - lastToggleTime >= 10000) { // 10 seconds
     lastToggleTime = currentMillis;
     showWeatherScreen = !showWeatherScreen;
   }
@@ -325,30 +331,73 @@ void updateWeatherOnLCD() {
 // Update global weather variables from JSON data
 //
 void updateWeatherVariables(const String& jsonData) {
-  DynamicJsonDocument jsonResponse(1024);
+  StaticJsonDocument<512> jsonResponse; // Lower memory footprint
   DeserializationError error = deserializeJson(jsonResponse, jsonData);
+  
   if (error) {
-    Serial.print("deserializeJson() failed: ");
+    Serial.print("JSON Parse Failed: ");
     Serial.println(error.c_str());
     return;
   }
+
   temperature = jsonResponse["main"]["temp"].as<float>();
   humidity = jsonResponse["main"]["humidity"].as<int>();
   condition = jsonResponse["weather"][0]["main"].as<String>();
-  delay(1000);
+}
+
+
+//
+//Read .json from API address
+//
+String getWeatherData() {
+  HTTPClient http;
+  String payload = "{}";
+  
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi not connected. Skipping weather fetch.");
+    return payload;
+  }
+  
+  http.setTimeout(5000);
+  String url = "http://api.openweathermap.org/data/2.5/weather?id=" + city + "&appid=" + apiKey + "&units=metric";
+  http.begin(client, url);
+  
+  int httpResponseCode = http.GET();
+  
+  if (httpResponseCode == 200) {
+    payload = http.getString();
+  } else {
+    Serial.print("Weather API Error: ");
+    Serial.println(httpResponseCode);
+  }
+  
+  http.end();
+  return payload;
+}
+
+
+//
+// Rewritten Section: Display a "Raining" message on the LCD (Fixed version)
+//
+void displayRainMessage() { 
+  for (int i = 0; i < 4; i++) {
+    if (valveOn[i]) {
+        turnOffValve(i);
+        lcd.backlight();
+        lcd.clear();
+        lcd.setCursor(4, 0);
+        lcd.print("Rain Delay");
+        lcd.setCursor(6, 1);
+        lcd.print("Enabled");
+        delay(60000); // Delay for 60 seconds
+        lcd.noBacklight();
+    }   
+  }
 }
 
 //
-// Display a "Raining" message on the LCD
+//cache for weather data for scrolling screen update every hour
 //
-void displayRainMessage() { 
-  lcd.backlight();
-  lcd.clear();
-  lcd.setCursor(4, 1);
-  lcd.print("Raining");
-  delay(60000);
-  lcd.noBacklight();
-}
 
 void updateCachedWeatherData() {
   unsigned long currentMillis = millis();
@@ -362,35 +411,11 @@ void updateCachedWeatherData() {
 // Update LCD for a specific zone with elapsed/remaining time
 //
 void updateLCDForZone(int zone) {
-  static unsigned long lastUpdate = 0;
-  unsigned long currentTime = millis();
-  if (currentTime - lastUpdate < 1000) {
-    return;
-  }
-  lastUpdate = currentTime;
-  unsigned long elapsed = (currentTime - valveStartTime[zone]) / 1000;
-  unsigned long totalDuration = duration[zone] * 60;
-  unsigned long remainingTime = (totalDuration > elapsed) ? totalDuration - elapsed : 0;
-  String zoneText = "Zone " + String(zone + 1);
-  String elapsedTimeText = String(elapsed / 60) + ":" + (elapsed % 60 < 10 ? "0" : "") + String(elapsed % 60);
-  String displayText = zoneText + " - " + elapsedTimeText;
-  lcd.clear();
-  lcd.setCursor((16 - displayText.length()) / 2, 0);
-  lcd.print(displayText);
-  if (elapsed < totalDuration) {
-    String remainingTimeText = String(remainingTime / 60) + "m Remaining.";
-    lcd.setCursor((16 - remainingTimeText.length()) / 2, 1);
-    lcd.print(remainingTimeText);
-  } else {
-    lcd.clear();
-    lcd.setCursor(4, 0);
-    lcd.print("Complete");
-    delay(2000);
-  }
 }
 
 //
 // Check the watering schedule for a given zone using the current time
+//
 void checkWateringSchedule(int zone) {
   loadSchedule();  // Reload schedule in case of changes
   
@@ -400,7 +425,7 @@ void checkWateringSchedule(int zone) {
   int currentHour = timeinfo->tm_hour;
   int currentMin = timeinfo->tm_min;
   
-  if (shallWater(zone, currentDay, currentHour, currentMin)) {
+  if (checkSchedule(zone, currentDay, currentHour, currentMin)) {
     if (!valveOn[zone]) {
       if (!weatherCheckRequired) {
         weatherCheckRequired = true;
@@ -426,7 +451,7 @@ void checkWateringSchedule(int zone) {
 //
 // Decide if watering should occur based on the schedule and days enabled
 //
-bool shallWater(int zone, int currentDay, int currentHour, int currentMin) {
+bool checkSchedule(int zone, int currentDay, int currentHour, int currentMin) {
   if (days[zone][currentDay]) {
     if (currentHour == startHour[zone] && currentMin == startMin[zone]) {
       return true;
@@ -443,7 +468,7 @@ bool shallWater(int zone, int currentDay, int currentHour, int currentMin) {
 //
 // Check if the water tank level is low
 //
-bool isTankLevelLow() {
+bool getTankLevel() {
   int tankLevel = analogRead(tankLevelPin);
   Serial.print("Tank level: ");
   Serial.println(tankLevel);
@@ -466,7 +491,8 @@ void turnOnValve(int zone) {
   delay(2000);
   lcd.clear();
   
-  if (isTankLevelLow()) {
+  // Determine water source based on tank level
+  if (getTankLevel()) {
     digitalWrite(mainsSolenoidPin, HIGH);
     lcd.setCursor(0, 1);
     lcd.print("Source: Mains");
@@ -477,7 +503,7 @@ void turnOnValve(int zone) {
   }
   delay(2000);
   lcd.clear();
-  }
+}
 
 //
 // Determine if the watering duration for a zone has completed
@@ -493,28 +519,40 @@ bool hasDurationCompleted(int zone) {
 //
 void turnOnValveManual(int zone) {
   digitalWrite(valvePins[zone], HIGH);
+  valveStartTime[zone] = millis();
   lcd.backlight(); 
   lcd.clear();
   lcd.setCursor(3, 0);
   lcd.print("Valve ");
   lcd.print(zone + 1);
   lcd.print(" On");
+  // *** Added water source selection similar to scheduled function ***
+  if (getTankLevel()) {
+    digitalWrite(mainsSolenoidPin, HIGH);
+    lcd.setCursor(0, 1);
+    lcd.print("Source: Mains");
+  } else {
+    digitalWrite(tankSolenoidPin, HIGH);
+    lcd.setCursor(0, 1);
+    lcd.print("Source: Tank");
+  }
   server.send(200, "text/plain", "Valve " + String(zone + 1) + " turned on");       
 }
 
 //
-// Turn off a valve for a given zone
+// Turn off a valve for a given zone (scheduled version)
 //
 void turnOffValve(int zone) {
   digitalWrite(valvePins[zone], LOW);
+  // *** Ensure water source solenoids are turned off ***
+  digitalWrite(mainsSolenoidPin, LOW);
+  digitalWrite(tankSolenoidPin, LOW);
   lcd.clear();
   lcd.setCursor(4, 0);
   lcd.print("Valve ");
   lcd.print(zone + 1);
   lcd.print(" Off");
   valveOn[zone] = false;  
-  server.sendHeader("Location", "/", true);
-  server.send(302, "text/plain", "");
   delay(1000);
   lcd.clear();
 
@@ -544,6 +582,9 @@ void turnOffValve(int zone) {
 //
 void turnOffValveManual(int zone) {
   digitalWrite(valvePins[zone], LOW);
+  // *** Ensure water source solenoids are turned off ***
+  digitalWrite(mainsSolenoidPin, LOW);
+  digitalWrite(tankSolenoidPin, LOW);
   lcd.clear(); 
   lcd.setCursor(3, 0);
   lcd.print("Valve ");
@@ -579,25 +620,6 @@ String getDayName(int dayIndex) {
 }
 
 //
-// Fetch weather data from OpenWeatherMap
-//
-String getWeatherData() {
-  HTTPClient http;
-  http.setTimeout(5000);
-  String url = "http://api.openweathermap.org/data/2.5/weather?id=" + city + "&appid=" + apiKey + "&units=metric";
-  http.begin(client, url);
-  int httpResponseCode = http.GET();
-  String payload = "{}";
-  if (httpResponseCode > 0) {
-    payload = http.getString();
-  } else {
-    Serial.println("Error: Unable to fetch weather data.");
-  }
-  http.end();
-  return payload;
-}
-
-//
 // HTTP handler for the root page – displays weather info and schedule controls
 //
 void handleRoot() {
@@ -624,7 +646,7 @@ void handleRoot() {
   // Read tank level and compute percentage/status
   int tankRaw = analogRead(tankLevelPin);
   int tankPercentage = map(tankRaw, 0, 1023, 0, 100);
-  String tankStatus = (tankRaw < 500) ? "Low" : "Normal";
+  String tankStatus = (tankRaw < 250) ? "Low" : "Normal";
   
   // Update LCD when WiFi is connected
   if (WiFi.status() == WL_CONNECTED) {
@@ -641,184 +663,167 @@ void handleRoot() {
     lcd.print("%");
   }
 
- // Build modern HTML page with enhanced CSS styling
+  // Build modern HTML page with enhanced CSS styling
   String html = "<!DOCTYPE html><html lang='en'><head>";
-      html += "<meta charset='UTF-8'>";
-      html += "<meta name='viewport' content='width=device-width, initial-scale=1.0'>";
-      html += "<title>Smart Irrigation System</title>";
-      html += "<link href='https://fonts.googleapis.com/css?family=Roboto:400,500&display=swap' rel='stylesheet'>";
-      html += "<style>";
-      html += "body { font-family: 'Roboto', sans-serif; background: linear-gradient(135deg, #e7f0f8, #ffffff); margin: 0; padding: 0; }";
-      html += "header { background: linear-gradient(90deg, #0073e6, #00aaff); color: #fff; padding: 20px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }";
-      html += ".container { max-width: 800px; margin: 20px auto; background: #fff; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); padding: 20px; }";
-      html += "h1 { margin: 0 0 10px; font-size: 2em; }";
-      html += "p { margin: 10px 0; text-align: center; }";
-      html += ".zone-container { background: #f9fbfd; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #e0e0e0; }";
-      html += ".days-container { display: flex; flex-wrap: wrap; justify-content: center; margin-bottom: 10px; }";
-      html += ".checkbox-container { margin: 5px; }";
-      html += ".time-duration-container { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; margin-bottom: 15px; }";
-      html += ".time-input, .duration-input { margin: 0 10px 10px; }";
-      html += ".time-input label, .duration-input label { display: block; font-size: 0.9em; margin-bottom: 5px; }";
-      html += "input[type='number'] { padding: 5px; border: 1px solid #ccc; border-radius: 4px; }";
-      html += ".enable-input { margin: 10px; }";
-      html += ".manual-control-container { text-align: center; margin-top: 10px; }";
-      html += "button { padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; margin: 5px; transition: background 0.3s ease; }";
-      html += ".turn-on-btn { background: #4caf50; color: #fff; }";
-      html += ".turn-on-btn:hover { background: #45a044; }";
-      html += ".turn-off-btn { background: #0073e6; color: #fff; }";
-      html += ".turn-off-btn:hover { background: #0061c2; }";
-      html += "button[type='submit'] { background: #2196F3; color: #fff; }";
-      html += "button[type='submit']:hover { background: #1976d2; }";
-      html += "a { color: #0073e6; text-decoration: none; }";
-      html += "a:hover { text-decoration: underline; }";
-      html += "</style></head><body>"; 
+  html += "<meta charset='UTF-8'>";
+  html += "<meta name='viewport' content='width=device-width, initial-scale=1.0'>";
+  html += "<title>Smart Irrigation System</title>";
+  html += "<link href='https://fonts.googleapis.com/css?family=Roboto:400,500&display=swap' rel='stylesheet'>";
+  html += "<style>";
+  html += "body { font-family: 'Roboto', sans-serif; background: linear-gradient(135deg, #e7f0f8, #ffffff); margin: 0; padding: 0; }";
+  html += "header { background: linear-gradient(90deg, #0073e6, #00aaff); color: #fff; padding: 20px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }";
+  html += ".container { max-width: 800px; margin: 20px auto; background: #fff; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); padding: 20px; }";
+  html += "h1 { margin: 0 0 10px; font-size: 2em; }";
+  html += "p { margin: 10px 0; text-align: center; }";
+  html += ".zone-container { background: #f9fbfd; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #e0e0e0; }";
+  html += ".days-container { display: flex; flex-wrap: wrap; justify-content: center; margin-bottom: 10px; }";
+  html += ".checkbox-container { margin: 5px; }";
+  html += ".time-duration-container { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; margin-bottom: 15px; }";
+  html += ".time-input, .duration-input { margin: 0 10px 10px; }";
+  html += ".time-input label, .duration-input label { display: block; font-size: 0.9em; margin-bottom: 5px; }";
+  html += "input[type='number'] { padding: 5px; border: 1px solid #ccc; border-radius: 4px; }";
+  html += ".enable-input { margin: 10px; }";
+  html += ".manual-control-container { text-align: center; margin-top: 10px; }";
+  html += "button { padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; margin: 5px; transition: background 0.3s ease; }";
+  html += ".turn-on-btn { background: #4caf50; color: #fff; }";
+  html += ".turn-on-btn:hover { background: #45a044; }";
+  html += ".turn-off-btn { background: #0073e6; color: #fff; }";
+  html += ".turn-off-btn:hover { background: #0061c2; }";
+  html += "button[type='submit'] { background: #2196F3; color: #fff; }";
+  html += "button[type='submit']:hover { background: #1976d2; }";
+  html += "a { color: #0073e6; text-decoration: none; }";
+  html += "a:hover { text-decoration: underline; }";
+  html += "@media (max-width: 600px) { .container { width: 100%; padding: 10px; } .zone-container { margin-bottom: 15px; } .time-duration-container { flex-direction: column; align-items: flex-start; } .time-input, .duration-input { width: 100%; } }";
+  html += "</style></head><body>";
 
-      html += "<header><h1>Smart Irrigation System</h1></header>";
-      html += "<div class='container'>";
-      html += "<p id='clock'>Current Time: " + currentTime + "</p>";
-      html += "<p>Location: " + cityName + "</p>";
-      html += "<p>Condition: " + cond + "</p>";
-      html += "<p>Temperature: " + String(temp) + " &#8451;</p>";
-      html += "<p>Humidity: " + String(int(hum)) + " %</p>";
-      html += "<p>Wind Speed: " + String(ws) + " m/s</p>";
-      html += "<p>Tank Level: " + String(tankPercentage) + "% (" + tankStatus + ")</p>";
+  html += "<header><h1>Smart Irrigation System</h1></header>";
+  html += "<div class='container'>";
+  html += "<p id='clock'>Current Time: " + currentTime + "</p>";
+  html += "<p>Location: " + cityName + "</p>";
+  html += "<p id='weather-condition'>Condition: " + cond + "</p>";
+  html += "<p id='temperature'>Temperature: " + String(temp) + " &#8451;</p>";
+  html += "<p id='humidity'>Humidity: " + String(int(hum)) + " %</p>";
+  html += "<p id='wind-speed'>Wind Speed: " + String(ws) + " m/s</p>";
+  html += "<p>Tank Level: <progress id='tankLevel' value='" + String(tankPercentage) + "' max='100'></progress>" + String(tankPercentage) + "% (" + tankStatus + ")</p>";
 
-      html += "<script>";
-      html += "function updateClock() {";
-      html += "  var now = new Date();";
-      html += "  var hours = now.getHours().toString().padStart(2, '0');";
-      html += "  var minutes = now.getMinutes().toString().padStart(2, '0');";
-      html += "  var seconds = now.getSeconds().toString().padStart(2, '0');";
-      html += "  document.getElementById('clock').textContent = 'Current Time: ' + hours + ':' + minutes + ':' + seconds;";
-      html += "}";
-      html += "setInterval(updateClock, 1000);";
-      html += "</script>";
-
-      html += "<form action='/submit' method='POST'>";
+  // Existing JS for clock and weather updates
+  html += "<script>";
+  html += "function updateClock() {";
+  html += "  var now = new Date();";
+  html += "  var hours = now.getHours().toString().padStart(2, '0');";
+  html += "  var minutes = now.getMinutes().toString().padStart(2, '0');";
+  html += "  var seconds = now.getSeconds().toString().padStart(2, '0');";
+  html += "  document.getElementById('clock').textContent = 'Current Time: ' + hours + ':' + minutes + ':' + seconds;";
+  html += "} setInterval(updateClock, 1000);";
+  html += "function fetchWeatherData() {";
+  html += "  fetch('/weather-data').then(response => response.json()).then(data => {";
+  html += "    document.getElementById('weather-condition').textContent = 'Condition: ' + data.condition;";
+  html += "    document.getElementById('temperature').textContent = 'Temperature: ' + data.temp + ' &#8451;';";
+  html += "    document.getElementById('humidity').textContent = 'Humidity: ' + data.humidity + ' %';";
+  html += "    document.getElementById('wind-speed').textContent = 'Wind Speed: ' + data.windSpeed + ' m/s';";
+  html += "  }).catch(error => console.error('Error fetching weather data:', error));";
+  html += "} setInterval(fetchWeatherData, 60000);"; // Fetch weather data every 60 seconds
+  html += "</script>";
+  
+  // Form with schedule controls and manual valve buttons
+  html += "<form action='/submit' method='POST'>";
   for (int zone = 0; zone < numZones; zone++) {
-       html += "<div class='zone-container'>";
-       html += "<p><strong>Zone " + String(zone + 1) + ":</strong></p>";
-       html += "<div class='days-container'>";
-   for (int i = 0; i < 7; i++) {
-    String dayLabel = getDayName(i);
-    String checked = days[zone][i] ? "checked" : "";
-        html += "<div class='checkbox-container'>";
-        html += "<input type='checkbox' name='day" + String(zone) + "_" + String(i) + "' id='day" + String(zone) + "_" + String(i) + "' " + checked + ">";
-        html += "<label for='day" + String(zone) + "_" + String(i) + "'>" + dayLabel + "</label>";
-        html += "</div>";
-  }
+    html += "<div class='zone-container'>";
+    html += "<p><strong>Zone " + String(zone + 1) + ":</strong></p>";
+    html += "<div class='days-container'>";
+    for (int i = 0; i < 7; i++) {
+      String dayLabel = getDayName(i);
+      String checked = days[zone][i] ? "checked" : "";
+      html += "<div class='checkbox-container'>";
+      html += "<input type='checkbox' name='day" + String(zone) + "_" + String(i) + "' id='day" + String(zone) + "_" + String(i) + "' " + checked + ">";
+      html += "<label for='day" + String(zone) + "_" + String(i) + "'>" + dayLabel + "</label>";
       html += "</div>";
-  
-   html += "<style>";
-  html += "  /* Container for each time/duration block, centered */";
-  html += "  .time-duration-container {";
-  html += "    display: flex;";
-  html += "    flex-wrap: wrap;";
-  html += "    align-items: center;";
-  html += "    justify-content: center;";
-  html += "    margin-bottom: 15px;";
-  html += "  }";
-  html += "";
-  html += "  /* Styling for each input group */";
-  html += "  .time-input, .duration-input, .enable-input {";
-  html += "    flex: 0 0 auto;";
-  html += "    margin: 0 10px 10px 10px;";
-  html += "  }";
-  html += "";
-  html += "  /* Label styling */";
-  html += "  .time-input label, .duration-input label, .enable-input label {";
-  html += "    display: block;";
-  html += "    font-weight: bold;";
-  html += "    margin-bottom: 5px;";
-  html += "    text-align: center;";
-  html += "  }";
-  html += "";
-  html += "  /* Number inputs styling */";
-  html += "  .time-input input[type='number'], .duration-input input[type='number'] {";
-  html += "    width: 80px;";
-  html += "    padding: 5px;";
-  html += "    box-sizing: border-box;";
-  html += "    text-align: center;";
-  html += "  }";
-  html += "";
-  html += "  /* Checkbox styling */";
-  html += "  .enable-input input[type='checkbox'] {";
-  html += "    margin-right: 5px;";
-  html += "  }";
-  html += "</style>";
-
- // --- First Time Duration Block ---
-  html += "<div class='time-duration-container'>";
-  // Start Time 1 inputs
-    html += "<div class='time-input'>";
-      html += "<label for='startHour" + String(zone) + "'>Start Time 1:</label>";
-      html += "<input type='number' name='startHour" + String(zone) + "' id='startHour" + String(zone) + "' min='0' max='23' value='" + String(startHour[zone]) + "' required>";
-      html += "<input type='number' name='startMin" + String(zone) + "' id='startMin" + String(zone) + "' min='0' max='59' value='" + String(startMin[zone]) + "' required>";
+    }
     html += "</div>";
 
-  // Duration input
+    // First Start Time and Duration
+    html += "<div class='time-duration-container'>";
+    html += "<div class='time-input'>";
+    html += "<label for='startHour" + String(zone) + "'>Start Time 1:</label>";
+    html += "<input type='number' name='startHour" + String(zone) + "' id='startHour" + String(zone) + "' min='0' max='23' value='" + String(startHour[zone]) + "' required>";
+    html += "<input type='number' name='startMin" + String(zone) + "' id='startMin" + String(zone) + "' min='0' max='59' value='" + String(startMin[zone]) + "' required>";
+    html += "</div>";
     html += "<div class='duration-input'>";
-      html += "<label for='duration" + String(zone) + "'>Duration (min):</label>";
-      html += "<input type='number' name='duration" + String(zone) + "' id='duration" + String(zone) + "' min='0' value='" + String(duration[zone]) + "' required>";
+    html += "<label for='duration" + String(zone) + "'>Duration (min):</label>";
+    html += "<input type='number' name='duration" + String(zone) + "' id='duration" + String(zone) + "' min='0' value='" + String(duration[zone]) + "' required>";
     html += "</div>";
-  html += "</div>";
+    html += "</div>";
 
- // --- Second Time Duration Block ---
-  html += "<div class='time-duration-container'>";
-  // Start Time 2 inputs
+    // Second Start Time and Enable checkbox
+    html += "<div class='time-duration-container'>";
     html += "<div class='time-input'>";
-      html += "<label for='startHour2" + String(zone) + "'>Start Time 2:</label>";
-      html += "<input type='number' name='startHour2" + String(zone) + "' id='startHour2" + String(zone) + "' min='0' max='23' value='" + String(startHour2[zone]) + "' required>";
-      html += "<input type='number' name='startMin2" + String(zone) + "' id='startMin2" + String(zone) + "' min='0' max='59' value='" + String(startMin2[zone]) + "' required>";
+    html += "<label for='startHour2" + String(zone) + "'>Start Time 2:</label>";
+    html += "<input type='number' name='startHour2" + String(zone) + "' id='startHour2" + String(zone) + "' min='0' max='23' value='" + String(startHour2[zone]) + "' required>";
+    html += "<input type='number' name='startMin2" + String(zone) + "' id='startMin2" + String(zone) + "' min='0' max='59' value='" + String(startMin2[zone]) + "' required>";
     html += "</div>";
-
-  // Checkbox to enable second start time
     html += "<div class='enable-input'>";
-      html += "<input type='checkbox' name='enableStartTime2" + String(zone) + "' id='enableStartTime2" + String(zone) + "'" + (enableStartTime2[zone] ? " checked" : "") + ">";
-      html += "<label for='enableStartTime2" + String(zone) + "'>Enable Start Time 2</label>";
+    html += "<input type='checkbox' name='enableStartTime2" + String(zone) + "' id='enableStartTime2" + String(zone) + "'" + (enableStartTime2[zone] ? " checked" : "") + ">";
+    html += "<label for='enableStartTime2" + String(zone) + "'>Enable Start Time 2</label>";
     html += "</div>";
-  html += "</div>";
+    html += "</div>";
 
-  
-      html += "<div class='manual-control-container'>";
-      html += "<button type='button' class='turn-on-btn' data-zone='" + String(zone) + "'>Turn On</button>";
-      html += "<button type='button' class='turn-off-btn' data-zone='" + String(zone) + "'>Turn Off</button>";
-      html += "</div>";
-      html += "</div>";
- }
-  
-     html += "<script>";
-     html += "document.addEventListener('DOMContentLoaded', function() {";
-     html += "  var turnOnButtons = document.querySelectorAll('.turn-on-btn');";
-     html += "  var turnOffButtons = document.querySelectorAll('.turn-off-btn');";
-     html += "  turnOnButtons.forEach(function(button) {";
-     html += "    button.addEventListener('click', function() {";
-     html += "      var zone = this.getAttribute('data-zone');";
-     html += "      sendValveControl('/valve/on' + zone);";
-     html += "    });";
-     html += "  });";
-     html += "  turnOffButtons.forEach(function(button) {";
-     html += "    button.addEventListener('click', function() {";
-     html += "      var zone = this.getAttribute('data-zone');";
-     html += "      sendValveControl('/valve/off' + zone);";
-     html += "    });";
-     html += "  });";
-     html += "  function sendValveControl(route) {";
-     html += "    fetch(route, { method: 'POST' })";
-     html += "      .then(response => response.text())";
-     html += "      .then(data => console.log(data))";
-     html += "      .catch(error => console.error('Error:', error));";
-     html += "  }";
-     html += "});";
-     html += "</script>"; 
-  
-     html += "<button type='submit'>Update Schedule</button></form>";
-     html += "<p style='text-align: center;'><a href='https://openweathermap.org/city/"+city+"' target='_blank'>View Weather Details on OpenWeatherMap</a></p>";
-     html += "<p style='text-align: center;'>Click <a href='/setup'>HERE</a> to enter API key, City, and Time Zone offset.</p>";
-     html += "</div></body></html>";
+    // Manual control buttons for each zone
+    html += "<div class='manual-control-container'>";
+    html += "<button type='button' class='turn-on-btn' data-zone='" + String(zone) + "'>Turn On</button>";
+    html += "<button type='button' class='turn-off-btn' data-zone='" + String(zone) + "' disabled>Turn Off</button>";
+    html += "</div>";
 
- server.send(200, "text/html", html);
+    html += "</div>"; // Close zone container
+  }
+  
+  html += "<button type='submit'>Update Schedule</button>";
+  html += "</form>";
+  html += "<p style='text-align: center;'>Click <a href='/setup'>HERE</a> to enter API key, City, and Time Zone offset.</p>";
+  html += "<p style='text-align: center;'><a href='https://openweathermap.org/city/" + cityName + "' target='_blank'>View Weather Details on OpenWeatherMap</a></p>";
+
+  // --- Added: JavaScript for Manual Control Button Actions ---
+  html += "<script>";
+  html += "document.addEventListener('DOMContentLoaded', function() {";
+  html += "  var turnOnButtons = document.querySelectorAll('.turn-on-btn');";
+  html += "  var turnOffButtons = document.querySelectorAll('.turn-off-btn');";
+  html += "  turnOnButtons.forEach(function(button) {";
+  html += "    button.addEventListener('click', function() {";
+  html += "      var zone = this.getAttribute('data-zone');";
+  html += "      fetch('/valve/on' + zone, { method: 'POST' })";
+  html += "        .then(response => response.text())";
+  html += "        .then(data => {";
+  html += "          console.log(data);";
+  html += "          this.textContent = 'Turned On';";
+  html += "          var turnOffButton = document.querySelector('.turn-off-btn[data-zone=\"' + zone + '\"]');";
+  html += "          turnOffButton.textContent = 'Turn Off';";
+  html += "          turnOffButton.disabled = false;";
+  html += "        })";
+  html += "        .catch(error => console.error('Error:', error));";
+  html += "    });";
+  html += "  });";
+  html += "  turnOffButtons.forEach(function(button) {";
+  html += "    button.addEventListener('click', function() {";
+  html += "      var zone = this.getAttribute('data-zone');";
+  html += "      fetch('/valve/off' + zone, { method: 'POST' })";
+  html += "        .then(response => response.text())";
+  html += "        .then(data => {";
+  html += "          console.log(data);";
+  html += "          this.textContent = 'Turned Off';";
+  html += "          var turnOnButton = document.querySelector('.turn-on-btn[data-zone=\"' + zone + '\"]');";
+  html += "          turnOnButton.textContent = 'Turn On';";
+  html += "          this.disabled = true;";
+  html += "        })";
+  html += "        .catch(error => console.error('Error:', error));";
+  html += "    });";
+  html += "  });";
+  html += "});";
+  html += "</script>";
+  
+  html += "</div></body></html>";
+
+  server.send(200, "text/html", html);
 }
+
 
 
 //
@@ -867,6 +872,7 @@ void handleSubmit() {
   }
   Serial.println("Saving schedule...");
   saveSchedule();
+  updateCachedWeatherData();
   server.sendHeader("Location", "/", true);
   server.send(302, "text/plain", "");
   Serial.println("Redirecting to root page.");
@@ -907,11 +913,11 @@ void handleSetupPage() {
       html += "</select>";
       html += "<label for='rainDelay'><input type='checkbox' id='rainDelay' name='rainDelay' " + String(rainDelayEnabled ? "checked" : "") + "> Enable Rain Delay</label>";
       html += "<input type='submit' value='Submit'>";
+      html += "<p style='text-align: center;'><a href='https://openweathermap.org/city/" +city+ "' target='_blank'>View Weather Details on OpenWeatherMap</a></p>";
       html += "</form>";
       html += "</body></html>";
   server.send(200, "text/html", html);
 }
-
 
 //
 // Reconnect WiFi if disconnected
