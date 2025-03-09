@@ -662,8 +662,7 @@ void handleRoot() {
     lcd.print(int(hum));
     lcd.print("%");
   }
-
-  // Build modern HTML page with enhanced CSS styling
+//Page Begin
   String html = "<!DOCTYPE html><html lang='en'><head>";
   html += "<meta charset='UTF-8'>";
   html += "<meta name='viewport' content='width=device-width, initial-scale=1.0'>";
