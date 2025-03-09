@@ -45,22 +45,21 @@ The controller will use your area settings to obtain up-to-date weather informat
 
 ----
 
+Setup Page
+![setup](https://github.com/user-attachments/assets/0625732d-a173-475c-963e-c30714bc7aaf)
 
-Wiring Diagram
-![wiring diag](https://github.com/numerik11/Irrigation-Controller-ESP8266/assets/72150418/e8b8f33b-ee8f-476f-b984-d1b4457ea578)
+
 
 Web User Interface
-![WebInterface](https://github.com/user-attachments/assets/858b17a5-7700-4d20-b997-f0eafc985ca5)
+![main](https://github.com/user-attachments/assets/262912bb-05b4-40ee-a69f-adebeff35236)
 
-Wiring Diagram
+
+
+Wiring Diagram 1
 ![irrigation wiring](https://github.com/numerik11/Irrigation-Controller-ESP8266/assets/72150418/36ed754a-8750-4896-b58e-b252a472d5aa)
 
-Default Pin Configs
---------------------
-valvePins[4] = {D0, D3, D5, D6}; // Pins for 4 solenoids
 
-mainsSolenoidPin = D7; // Mains solenoid pin (Optional)
 
-tankSolenoidPin = D8; // Water tank solenoid pin (optional)
+Wiring Diagram 2
+![wiring diag](https://github.com/numerik11/Irrigation-Controller-ESP8266/assets/72150418/e8b8f33b-ee8f-476f-b984-d1b4457ea578)
 
-tankLevelPin = A0; // Analog pin for tank level sensor (Untested) (optional)
