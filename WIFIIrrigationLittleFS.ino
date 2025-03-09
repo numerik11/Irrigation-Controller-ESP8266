@@ -22,6 +22,8 @@ WiFiManager wifiManager;
 ESP8266WebServer server(80);
 WiFiClient client;
 
+String newSsid;
+String newPassword;
 String apiKey;
 String city;
 
@@ -257,6 +259,7 @@ bool checkForRain() {
   return isRaining;
 }
 
+
 //
 // Update LCD display if any valve is active
 //
@@ -331,50 +334,37 @@ void updateWeatherOnLCD() {
 // Update global weather variables from JSON data
 //
 void updateWeatherVariables(const String& jsonData) {
-  StaticJsonDocument<512> jsonResponse; // Lower memory footprint
+  DynamicJsonDocument jsonResponse(1024);
   DeserializationError error = deserializeJson(jsonResponse, jsonData);
-  
   if (error) {
-    Serial.print("JSON Parse Failed: ");
+    Serial.print("deserializeJson() failed: ");
     Serial.println(error.c_str());
     return;
   }
-
   temperature = jsonResponse["main"]["temp"].as<float>();
   humidity = jsonResponse["main"]["humidity"].as<int>();
   condition = jsonResponse["weather"][0]["main"].as<String>();
+  delay(1000);
 }
-
 
 //
 //Read .json from API address
 //
 String getWeatherData() {
   HTTPClient http;
-  String payload = "{}";
-  
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi not connected. Skipping weather fetch.");
-    return payload;
-  }
-  
   http.setTimeout(5000);
   String url = "http://api.openweathermap.org/data/2.5/weather?id=" + city + "&appid=" + apiKey + "&units=metric";
   http.begin(client, url);
-  
   int httpResponseCode = http.GET();
-  
-  if (httpResponseCode == 200) {
+  String payload = "{}";
+  if (httpResponseCode > 0) {
     payload = http.getString();
   } else {
-    Serial.print("Weather API Error: ");
-    Serial.println(httpResponseCode);
+    Serial.println("Error: Unable to fetch weather data.");
   }
-  
   http.end();
   return payload;
 }
-
 
 //
 // Rewritten Section: Display a "Raining" message on the LCD (Fixed version)
@@ -411,6 +401,31 @@ void updateCachedWeatherData() {
 // Update LCD for a specific zone with elapsed/remaining time
 //
 void updateLCDForZone(int zone) {
+  static unsigned long lastUpdate = 0;
+  unsigned long currentTime = millis();
+  if (currentTime - lastUpdate < 1000) {
+    return;
+  }
+  lastUpdate = currentTime;
+  unsigned long elapsed = (currentTime - valveStartTime[zone]) / 1000;
+  unsigned long totalDuration = duration[zone] * 60;
+  unsigned long remainingTime = (totalDuration > elapsed) ? totalDuration - elapsed : 0;
+  String zoneText = "Zone " + String(zone + 1);
+  String elapsedTimeText = String(elapsed / 60) + ":" + (elapsed % 60 < 10 ? "0" : "") + String(elapsed % 60);
+  String displayText = zoneText + " - " + elapsedTimeText;
+  lcd.clear();
+  lcd.setCursor((16 - displayText.length()) / 2, 0);
+  lcd.print(displayText);
+  if (elapsed < totalDuration) {
+    String remainingTimeText = String(remainingTime / 60) + "m Remaining.";
+    lcd.setCursor((16 - remainingTimeText.length()) / 2, 1);
+    lcd.print(remainingTimeText);
+  } else {
+    lcd.clear();
+    lcd.setCursor(4, 0);
+    lcd.print("Complete");
+    delay(2000);
+  }
 }
 
 //
@@ -425,7 +440,7 @@ void checkWateringSchedule(int zone) {
   int currentHour = timeinfo->tm_hour;
   int currentMin = timeinfo->tm_min;
   
-  if (checkSchedule(zone, currentDay, currentHour, currentMin)) {
+  if (shallWater(zone, currentDay, currentHour, currentMin)) {
     if (!valveOn[zone]) {
       if (!weatherCheckRequired) {
         weatherCheckRequired = true;
@@ -451,7 +466,7 @@ void checkWateringSchedule(int zone) {
 //
 // Decide if watering should occur based on the schedule and days enabled
 //
-bool checkSchedule(int zone, int currentDay, int currentHour, int currentMin) {
+bool shallWater(int zone, int currentDay, int currentHour, int currentMin) {
   if (days[zone][currentDay]) {
     if (currentHour == startHour[zone] && currentMin == startMin[zone]) {
       return true;
@@ -468,7 +483,7 @@ bool checkSchedule(int zone, int currentDay, int currentHour, int currentMin) {
 //
 // Check if the water tank level is low
 //
-bool getTankLevel() {
+bool isTankLevelLow() {
   int tankLevel = analogRead(tankLevelPin);
   Serial.print("Tank level: ");
   Serial.println(tankLevel);
@@ -492,7 +507,7 @@ void turnOnValve(int zone) {
   lcd.clear();
   
   // Determine water source based on tank level
-  if (getTankLevel()) {
+  if (isTankLevelLow()) {
     digitalWrite(mainsSolenoidPin, HIGH);
     lcd.setCursor(0, 1);
     lcd.print("Source: Mains");
@@ -527,7 +542,7 @@ void turnOnValveManual(int zone) {
   lcd.print(zone + 1);
   lcd.print(" On");
   // *** Added water source selection similar to scheduled function ***
-  if (getTankLevel()) {
+  if (isTankLevelLow()) {
     digitalWrite(mainsSolenoidPin, HIGH);
     lcd.setCursor(0, 1);
     lcd.print("Source: Mains");
@@ -620,7 +635,7 @@ String getDayName(int dayIndex) {
 }
 
 //
-// HTTP handler for the root page – displays weather info and schedule controls
+// Fetch weather data from OpenWeatherMap
 //
 void handleRoot() {
   // Get current time as a formatted string
@@ -1120,4 +1135,5 @@ void handleConfigure() {
   server.sendHeader("Location", "/", true);
   server.send(302, "text/plain", "");
 }
+
 
