@@ -16,6 +16,7 @@
 
 // --- Global Pin Definitions ---
 const int valvePins[4] = {D0, D3, D5, D6}; // Pins for 4 solenoids 
+const int ledPin = D4;
 const int mainsSolenoidPin = D7;           // Mains solenoid pin (Optional)
 const int tankSolenoidPin = D8;            // Tank solenoid pin (Optional)
 const int tankLevelPin = A0;               // Analog pin for tank level sensor (Optional)
