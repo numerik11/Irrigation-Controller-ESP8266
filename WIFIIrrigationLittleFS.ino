@@ -554,9 +554,8 @@ void turnOnValveManual(int zone) {
   server.send(200, "text/plain", "Valve " + String(zone + 1) + " turned on");       
 }
 
-//
+
 // Turn off a valve for a given zone (scheduled version)
-//
 void turnOffValve(int zone) {
   digitalWrite(valvePins[zone], LOW);
   // *** Ensure water source solenoids are turned off ***
@@ -592,24 +591,33 @@ void turnOffValve(int zone) {
   lcd.noBacklight();
 }
 
-//
+
+
 // Manual control: Turn off valve for a given zone via HTTP request
-//
 void turnOffValveManual(int zone) {
+  // Turn off the valve and water source solenoids
   digitalWrite(valvePins[zone], LOW);
-  // *** Ensure water source solenoids are turned off ***
   digitalWrite(mainsSolenoidPin, LOW);
   digitalWrite(tankSolenoidPin, LOW);
+
+  // *** NEW: Stop the timer for this zone by resetting its flag and timer start ***
+  valveOn[zone] = false;
+
+  // Update LCD and send HTTP response
   lcd.clear(); 
   lcd.setCursor(3, 0);
   lcd.print("Valve ");
   lcd.print(zone + 1);
   lcd.print(" Off");
   server.send(200, "text/plain", "Valve " + String(zone + 1) + " turned off");
+
   delay(1200);
   lcd.noBacklight();
+
+  // Return to normal loop display (weather info, etc.)
   updateWeatherOnLCD();
 }
+
 
 //
 // Turn off all valves (used when rain is detected)
@@ -677,7 +685,7 @@ void handleRoot() {
     lcd.print(int(hum));
     lcd.print("%");
   }
-//Page Begin
+
   String html = "<!DOCTYPE html><html lang='en'><head>";
   html += "<meta charset='UTF-8'>";
   html += "<meta name='viewport' content='width=device-width, initial-scale=1.0'>";
@@ -793,7 +801,7 @@ void handleRoot() {
   html += "<button type='submit'>Update Schedule</button>";
   html += "</form>";
   html += "<p style='text-align: center;'>Click <a href='/setup'>HERE</a> to enter API key, City, and Time Zone offset.</p>";
-  html += "<p style='text-align: center;'><a href='https://openweathermap.org/city/" + cityName + "' target='_blank'>View Weather Details on OpenWeatherMap</a></p>";
+  html += "<p style='text-align: center;'><a href='https://openweathermap.org/city/" +city+ "' target='_blank'>View Weather Details on OpenWeatherMap</a></p>";
 
   // --- Added: JavaScript for Manual Control Button Actions ---
   html += "<script>";
@@ -1135,5 +1143,6 @@ void handleConfigure() {
   server.sendHeader("Location", "/", true);
   server.send(302, "text/plain", "");
 }
+
 
 
