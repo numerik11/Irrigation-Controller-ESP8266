@@ -60,6 +60,3 @@ Wiring Diagram 1
 
 
 
-Wiring Diagram 2
-![wiring diag](https://github.com/numerik11/Irrigation-Controller-ESP8266/assets/72150418/e8b8f33b-ee8f-476f-b984-d1b4457ea578)
-
