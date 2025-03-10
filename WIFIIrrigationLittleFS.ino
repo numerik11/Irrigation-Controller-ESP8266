@@ -1,6 +1,6 @@
 //Im using a D1 R2 Uno style 8266 board. 
 //With some variance in boards this pinout may need changing
-//Rewriting to use i2c i/o expansion would make pinout easier
+//Rewritinging to use i2c i/o expansion would make pinout easier
 
 #include <ArduinoJson.h>
 #include <ArduinoOTA.h>
@@ -223,8 +223,11 @@ void loop() {
     reconnectWiFi();
   }
   
-  // --- Cancel watering if high wind is detected during an active cycle ---
+  for (int i = 0; i < numZones; i++) { 
+  if (valveOn[i]) {
   cancelWateringForWind();
+  }
+ }
 }
 
 bool checkForWind() {
@@ -282,10 +285,10 @@ void cancelWateringForWind() {
     }
     lcd.backlight();
     lcd.clear();
-    lcd.setCursor(1, 0);
+    lcd.setCursor(4, 0);
     lcd.print("Wind Delay");
-    lcd.setCursor(0, 1);
-    lcd.print("All Water Off");
+    lcd.setCursor(4, 1);
+    lcd.print("Water Off");
     delay(60000);
     lcd.noBacklight();
   }
@@ -540,11 +543,11 @@ void turnOnValve(int zone) {
   
   if (isTankLevelLow()) {
     digitalWrite(mainsSolenoidPin, HIGH);
-    lcd.setCursor(0, 1);
+    lcd.setCursor(3, 1);
     lcd.print("Source: Mains");
   } else {
     digitalWrite(tankSolenoidPin, HIGH);
-    lcd.setCursor(0, 1);
+    lcd.setCursor(4, 1);
     lcd.print("Source: Tank");
   }
   delay(2000);
