@@ -55,8 +55,9 @@ Web User Interface
 
 
 
-Wiring Diagram 1
-![irrigation wiring](https://github.com/numerik11/Irrigation-Controller-ESP8266/assets/72150418/36ed754a-8750-4896-b58e-b252a472d5aa)
+Wiring Diagram 
+![284591751-36ed754a-8750-4896-b58e-b252a472d5aa](https://github.com/user-attachments/assets/2e560554-f027-4a23-9937-c324d0a798c6)
+
 
 
 
