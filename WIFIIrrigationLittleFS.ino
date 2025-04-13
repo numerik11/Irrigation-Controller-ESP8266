@@ -64,6 +64,8 @@ int startMin[numZones] = {0, 0, 0, 0};
 int startHour2[numZones] = {0, 0, 0, 0};
 int startMin2[numZones] = {0, 0, 0, 0};
 int duration[numZones] = {0, 0, 0, 0};
+bool queuedZones[numZones] = {false};
+unsigned long queuedStartTime[numZones] = {0};
 bool enableStartTime[numZones] = {true, true, true, true};  // Always enabled
 bool enableStartTime2[numZones] = {false, false, false, false};
 bool days[4][7] = {
@@ -225,7 +227,7 @@ void loop() {
   
   for (int i = 0; i < numZones; i++) { 
   if (valveOn[i]) {
-  cancelWateringForWind();
+  windDelay();
   }
  }
 }
@@ -246,29 +248,13 @@ bool checkForWind() {
   Serial.println(currentWindSpeed);
   if (currentWindSpeed >= windSpeedThreshold) {
     Serial.println("High wind speed detected. Cancelling watering.");
-    displayWindCancelMessage();
+    windDelay();
     return true;
   }
   return false;
 }
 
-void displayWindCancelMessage() {
-  for (int i = 0; i < numZones; i++) {
-    if (valveOn[i]) {
-      turnOffValve(i);
-      lcd.backlight();
-      lcd.clear();
-      lcd.setCursor(2, 0);
-      lcd.print("High Wind");
-      lcd.setCursor(1, 1);
-      lcd.print("Watering Off");
-      delay(60000); // Delay for 60 seconds (adjust as needed)
-      lcd.noBacklight();
-    }
-  }
-}
-
-void cancelWateringForWind() {
+void windDelay() {
   if (!windCancelEnabled) return;
   updateCachedWeatherData();
   DynamicJsonDocument jsonResponse(1024);
@@ -286,9 +272,9 @@ void cancelWateringForWind() {
     lcd.backlight();
     lcd.clear();
     lcd.setCursor(4, 0);
-    lcd.print("Wind Delay");
-    lcd.setCursor(4, 1);
-    lcd.print("Water Off");
+    lcd.print("Too Windy");
+    lcd.setCursor(2, 1);
+    lcd.print("Not Watering");
     delay(60000);
     lcd.noBacklight();
   }
@@ -323,9 +309,9 @@ void displayRainMessage() {
       lcd.backlight();
       lcd.clear();
       lcd.setCursor(4, 0);
-      lcd.print("Rain Delay");
-      lcd.setCursor(6, 1);
-      lcd.print("Enabled");
+      lcd.print("Its Raining");
+      lcd.setCursor(2, 1);
+      lcd.print("Not Watering");
       delay(60000); // Delay for 60 seconds
       lcd.noBacklight();
     }   
@@ -472,37 +458,79 @@ void updateWeatherVariables(const String& jsonData) {
 }
 
 void checkWateringSchedule(int zone) {
-  loadSchedule();
-  
+  loadSchedule();  // optional if not updated externally
+
   time_t now = time(nullptr);
   struct tm *timeinfo = localtime(&now);
   int currentDay = timeinfo->tm_wday;
   int currentHour = timeinfo->tm_hour;
   int currentMin = timeinfo->tm_min;
-  
+
+  bool tankLow = isTankLevelLow();
+
+  // If this zone is scheduled now
   if (shallWater(zone, currentDay, currentHour, currentMin)) {
     if (!valveOn[zone]) {
-      if (!weatherCheckRequired) {
-        weatherCheckRequired = true;
-      } else {
-        if (checkForRain()) {
-          Serial.println("It's raining. Valve will not be turned on.");
-          // displayRainMessage() already called in checkForRain()
-          return;
+      if (tankLow) {
+        // Check if another zone is active
+        bool anotherZoneRunning = false;
+        for (int i = 0; i < numZones; i++) {
+          if (valveOn[i]) {
+            anotherZoneRunning = true;
+            break;
+          }
         }
-        if (checkForWind()) {
-          Serial.println("High wind speed. Valve will not be turned on.");
+
+        // If someone else is running, queue this one
+        if (anotherZoneRunning) {
+          if (!queuedZones[zone]) {
+            queuedZones[zone] = true;
+            queuedStartTime[zone] = millis();
+            Serial.printf("Zone %d queued (mains active)\n", zone + 1);
+          }
           return;
         }
       }
+
+      // All checks passed → run this zone
+      if (!weatherCheckRequired) {
+        weatherCheckRequired = true;
+      } else {
+        if (checkForRain()) return;
+        if (checkForWind()) return;
+      }
+
       turnOnValve(zone);
       valveOn[zone] = true;
+      queuedZones[zone] = false;  // just in case
     }
-  } else {
-    if (valveOn[zone] && hasDurationCompleted(zone)) {
-      turnOffValve(zone);
-      valveOn[zone] = false;
-      weatherCheckRequired = false;
+  }
+
+  // If it's running, check if it finished
+  if (valveOn[zone] && hasDurationCompleted(zone)) {
+    turnOffValve(zone);
+    valveOn[zone] = false;
+    weatherCheckRequired = false;
+
+    // If on mains, check queue for next zone
+    if (isTankLevelLow()) {
+      for (int i = 0; i < numZones; i++) {
+        if (queuedZones[i]) {
+          unsigned long queuedSecs = (millis() - queuedStartTime[i]) / 1000;
+          unsigned long durationSecs = duration[i] * 60;
+
+          if (queuedSecs <= durationSecs) {
+            Serial.printf("Starting queued zone %d\n", i + 1);
+            turnOnValve(i);
+            valveOn[i] = true;
+            queuedZones[i] = false;
+            break;  // Only one at a time on mains
+          } else {
+            Serial.printf("Queued zone %d expired\n", i + 1);
+            queuedZones[i] = false;  // skip expired
+          }
+        }
+      }
     }
   }
 }
@@ -911,11 +939,6 @@ void handleSetupPage() {
   html += "<input type='text' id='city' name='city' value='" + city + "'>";
   html += "<label for='timezone'>City Timezone Offset (hours):</label>";
   html += "<input type='number' id='timezone' name='dstOffset' min='-12' max='14' step='0.50' value='" + String(dstAdjustment) + "'>";
-  html += "<label for='dstEnabled'>Daylight Saving Time:</label>";
-  html += "<select id='dstEnabled' name='dstEnabled'>";
-  html += "<option value='yes'>Yes</option>";
-  html += "<option value='no' selected>No</option>";
-  html += "</select>";
   html += "<label for='windSpeedThreshold'>Wind Speed Threshold (m/s):</label>";
   html += "<input type='number' id='windSpeedThreshold' name='windSpeedThreshold' min='0' step='0.1' value='" + String(windSpeedThreshold) + "'>";
   html += String("<label for='windCancelEnabled'><input type='checkbox' id='windCancelEnabled' name='windCancelEnabled'") + (windCancelEnabled ? " checked" : "") + "> Enable Wind Delay</label>";
@@ -930,9 +953,25 @@ void handleSetupPage() {
 void handleConfigure() {
   apiKey = server.arg("apiKey");
   city = server.arg("city");
-  float baseTimezone = server.arg("dstOffset").toFloat();
-  String dstChoice = server.arg("dstEnabled");
-  float overallOffset = baseTimezone + ((dstChoice == "yes") ? 1.0 : 0.0);
+  float baseTimezone = server.arg("dstOffset").toFloat();  // entered as local standard time (e.g. 9.5 for Adelaide)
+
+  // Convert to seconds and set as timezone offset (no DST yet)
+  long offsetSeconds = (long)(baseTimezone * 3600);
+  configTime(offsetSeconds, 0, "pool.ntp.org", "time.nist.gov");
+
+  // Wait for time sync
+  time_t now = time(nullptr);
+  while (now < 1000000000) {
+  delay(500);
+  now = time(nullptr);
+  }
+  struct tm *timeinfo = localtime(&now);
+
+  // Check if DST is currently active
+  bool isDst = timeinfo->tm_isdst > 0;
+
+  // Final DST-aware offset
+  float overallOffset = baseTimezone + (isDst ? +1.0 : 0.0);
   bool rainDelayOption = server.hasArg("rainDelay");
   
   // --- Process wind configuration ---
@@ -1039,16 +1078,18 @@ void saveSchedule() {
 }
 
 void saveConfig(const char* apiKey, const char* city, float dstOffsetHours) {
+  dstAdjustment = dstOffsetHours;  // ← move this up first
+
   File configFile = LittleFS.open("/config.txt", "w");
   if (!configFile) {
     Serial.println("Failed to open config file for writing");
     return;
   }
+
   configFile.println(apiKey);
   configFile.println(city);
-  configFile.println(dstAdjustment, 2);
+  configFile.println(dstAdjustment, 2);  // now correct value
   configFile.println(rainDelayEnabled ? "1" : "0");
-  // --- Save wind configuration ---
   configFile.println(windSpeedThreshold, 1);
   configFile.println(windCancelEnabled ? "1" : "0");
   configFile.close();
@@ -1061,7 +1102,6 @@ void saveConfig(const char* apiKey, const char* city, float dstOffsetHours) {
   lcd.noBacklight();
 
   Serial.println("Configuration saved");
-  dstAdjustment = dstOffsetHours;
 }
 
 void loadConfig() {
@@ -1110,6 +1150,7 @@ void loadConfig() {
   Serial.print("Wind Delayabled: ");
   Serial.println(windCancelEnabled ? "Yes" : "No");
 }
+
 
 
 
