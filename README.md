@@ -46,13 +46,13 @@ The controller will use your area settings to obtain up-to-date weather informat
 Materials
 ---------
 
-ESP8266 D1 R2 UNO	1	Main microcontroller with Wi-Fi
+ESP8266 D1 R2 OR similar microcontroller with Wi-Fi
 
 Relay Module (6-channel)	To switch solenoids (5V logic compatible)
 
-12V Solenoid Valves	4	For zone control 1 for tank 1 for main
+DC12V Solenoid Valves	4	For zone control 1 for Tank 1 for Main
 
-12V Power Supply 1 To drive solenoid valves
+DC12V 1.5 A Power Supply To drive solenoid valves and power controller
 
 1N4007 (Flyback protection)
 
