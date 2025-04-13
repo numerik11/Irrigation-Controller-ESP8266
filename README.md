@@ -33,8 +33,6 @@ City ID Number from openweathermap.org: eg, "2078025".
 
 Add your citys TimeZone eg, "9.5".
 
-For daylight savings use "Yes", or "No" if no daylight savings is applicable it adds an hour to your timezone if yes.
-
 API Key: Enter your OpenWeatherMap API key (get a free key from OpenWeatherMap.org).
 
 5. Once these details are submitted reset again. 
