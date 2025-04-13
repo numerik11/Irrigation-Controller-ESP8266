@@ -47,13 +47,19 @@ Materials
 ---------
 
 ESP8266 D1 R2 UNO	1	Main microcontroller with Wi-Fi
+
 Relay Module (6-channel)	To switch solenoids (5V logic compatible)
+
 12V Solenoid Valves	4	For zone control 1 for tank 1 for main
+
 5V Power Supply (2A min)	1	For ESP and relays (or separate 12V + buck converter)
+
 12V Power Supply (5A min)	1	To drive solenoid valves
+
 1N4007 (Flyback protection)
 
 Optional
+
 Analog Tank Level Sensor	1	0.5–4.5V output (e.g., 1.6 MPa pressure transducer)
 
 ----
