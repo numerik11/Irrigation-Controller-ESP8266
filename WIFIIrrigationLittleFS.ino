@@ -554,7 +554,7 @@ void turnOnValve(int zone) {
   digitalWrite(valvePins[zone], HIGH);
   valveStartTime[zone] = millis();
   lcd.backlight();
-  lcd.setCursor(0, 0);
+  lcd.setCursor(4, 0);
   lcd.print("Zone ");
   lcd.print(zone + 1);
   lcd.print(" On");
@@ -563,11 +563,11 @@ void turnOnValve(int zone) {
   
   if (isTankLevelLow()) {
     digitalWrite(mainsSolenoidPin, HIGH);
-    lcd.setCursor(3, 1);
-    lcd.print("Source: Mains");
+    lcd.setCursor(2, 1);
+    lcd.print("Source: Main");
   } else {
     digitalWrite(tankSolenoidPin, HIGH);
-    lcd.setCursor(4, 1);
+    lcd.setCursor(2, 1);
     lcd.print("Source: Tank");
   }
   delay(2000);
@@ -610,9 +610,10 @@ void turnOffValve(int zone) {
   lcd.setCursor(4, 0);
   lcd.print("Valve ");
   lcd.print(zone + 1);
-  lcd.print(" Off");
+  lcd.setCursor(6, 1);
+  lcd.print("Off");
   valveOn[zone] = false;  
-  delay(1000);
+  delay(2000);
   lcd.clear();
 
   String weatherData = getWeatherData();
