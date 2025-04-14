@@ -743,7 +743,7 @@ void handleRoot() {
   int tankRaw = analogRead(tankLevelPin);
   int tankPercentage = map(tankRaw, 0, 1023, 0, 100);
   String tankStatus = (tankRaw < 250) ? "Low - Using Main" : "Normal - Using Tank";
-  html += "<p>Tank Level: <progress id='tankLevel' value='" +  String(tankPercentage) + "' max='100'></progress>" + String(tankPercentage) + "% (" + tankStatus + ")</p>";
+  html += "<p>Tank Level: <progress id='tankLevel' value='" + String(tankPercentage) + "' max='100'></progress> " + String(tankPercentage) + "% (" + tankStatus + ")</p>";
 
   html += "<script>";
   html += "function updateClock() {";
@@ -767,6 +767,19 @@ void handleRoot() {
   for (int zone = 0; zone < numZones; zone++) {
     html += "<div class='zone-container'>";
     html += "<p><strong>Zone " + String(zone + 1) + ":</strong></p>";
+    
+    // --- Status display for each valve ---
+    html += "<p>Status: ";
+    if (valveOn[zone]) {
+      html += "Running";
+    } else if (queuedZones[zone]) {
+      html += "Queued";
+    } else {
+      html += "Off";
+    }
+    html += "</p>";
+    // ------------------------------------
+
     html += "<div class='days-container'>";
     for (int i = 0; i < 7; i++) {
       String dayLabel = getDayName(i);
@@ -815,7 +828,6 @@ void handleRoot() {
   html += "<p style='text-align: center;'>Click <a href='/setup'>HERE</a> to enter API key, City, Time Zone offset, and Wind Settings.</p>";
   html += "<p style='text-align: center;'><a href='https://openweathermap.org/city/" + city + "' target='_blank'>View Weather Details on OpenWeatherMap</a></p>";
 
-    
   html += "<script>";
   html += "document.addEventListener('DOMContentLoaded', function() {";
   html += "  var turnOnButtons = document.querySelectorAll('.turn-on-btn');";
@@ -1142,7 +1154,4 @@ void loadConfig() {
   Serial.print("Wind Delayabled: ");
   Serial.println(windCancelEnabled ? "Yes" : "No");
 }
-
-
-
 
