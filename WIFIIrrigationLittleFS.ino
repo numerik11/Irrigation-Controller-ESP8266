@@ -43,7 +43,7 @@ bool weatherCheckRequired = false;
 bool wifiConnected = false;
 bool rainDelayEnabled = true;  // Default: Rain delay enabled
 
-// --- NEW GLOBAL VARIABLES for wind Delayion ---
+// --- NEW GLOBAL VARIABLES for wind Delay ---
 float windSpeedThreshold = 5.0;      // Default wind speed threshold in m/s
 bool windCancelEnabled = false;      // Default: wind Delayion disabled
 
@@ -458,7 +458,7 @@ void updateWeatherVariables(const String& jsonData) {
 }
 
 void checkWateringSchedule(int zone) {
-  loadSchedule();  // optional if not updated externally
+  loadSchedule();  // Reload schedule if needed
 
   time_t now = time(nullptr);
   struct tm *timeinfo = localtime(&now);
@@ -466,13 +466,14 @@ void checkWateringSchedule(int zone) {
   int currentHour = timeinfo->tm_hour;
   int currentMin = timeinfo->tm_min;
 
+  // Determine if the tank is low (i.e., mains water is used)
   bool tankLow = isTankLevelLow();
 
-  // If this zone is scheduled now
+  // If this zone is scheduled to run now...
   if (shallWater(zone, currentDay, currentHour, currentMin)) {
     if (!valveOn[zone]) {
       if (tankLow) {
-        // Check if another zone is active
+        // In mains mode, only allow one valve at a time.
         bool anotherZoneRunning = false;
         for (int i = 0; i < numZones; i++) {
           if (valveOn[i]) {
@@ -480,55 +481,46 @@ void checkWateringSchedule(int zone) {
             break;
           }
         }
-
-        // If someone else is running, queue this one
         if (anotherZoneRunning) {
           if (!queuedZones[zone]) {
             queuedZones[zone] = true;
             queuedStartTime[zone] = millis();
             Serial.printf("Zone %d queued (mains active)\n", zone + 1);
           }
-          return;
+          return;  // Do not start this zone immediately
         }
       }
-
-      // All checks passed → run this zone
+      
+      // When using tanks (or if no valve is running in mains mode),
+      // proceed to check weather and then start this zone.
       if (!weatherCheckRequired) {
         weatherCheckRequired = true;
       } else {
         if (checkForRain()) return;
         if (checkForWind()) return;
       }
-
+      
       turnOnValve(zone);
       valveOn[zone] = true;
-      queuedZones[zone] = false;  // just in case
+      queuedZones[zone] = false;  // Clear any previous queue flag
     }
   }
 
-  // If it's running, check if it finished
+  // If the valve for this zone is running and its duration has completed...
   if (valveOn[zone] && hasDurationCompleted(zone)) {
     turnOffValve(zone);
     valveOn[zone] = false;
     weatherCheckRequired = false;
 
-    // If on mains, check queue for next zone
-    if (isTankLevelLow()) {
+    // In mains mode, check for any queued zones and start the first one found.
+    if (tankLow) {
       for (int i = 0; i < numZones; i++) {
         if (queuedZones[i]) {
-          unsigned long queuedSecs = (millis() - queuedStartTime[i]) / 1000;
-          unsigned long durationSecs = duration[i] * 60;
-
-          if (queuedSecs <= durationSecs) {
-            Serial.printf("Starting queued zone %d\n", i + 1);
-            turnOnValve(i);
-            valveOn[i] = true;
-            queuedZones[i] = false;
-            break;  // Only one at a time on mains
-          } else {
-            Serial.printf("Queued zone %d expired\n", i + 1);
-            queuedZones[i] = false;  // skip expired
-          }
+          Serial.printf("Starting queued zone %d\n", i + 1);
+          turnOnValve(i);
+          valveOn[i] = true;
+          queuedZones[i] = false;
+          break;  // Only one queued zone is started at a time
         }
       }
     }
@@ -1150,7 +1142,6 @@ void loadConfig() {
   Serial.print("Wind Delayabled: ");
   Serial.println(windCancelEnabled ? "Yes" : "No");
 }
-
 
 
 
